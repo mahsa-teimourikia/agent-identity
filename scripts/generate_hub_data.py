@@ -64,9 +64,7 @@ def parse_curriculum():
                 'material': f"{repo_base}{readme_path}"
             }
 
-            if py_file:
-                lesson['lab'] = f"{repo_base}{py_file}"
-                lesson['run'] = f"python3 {py_file}"
+            # Do not generate lab and run fields for .py files per user request
             
             if ipynb_file:
                 lesson['notebook'] = f"{repo_base}{ipynb_file}"
