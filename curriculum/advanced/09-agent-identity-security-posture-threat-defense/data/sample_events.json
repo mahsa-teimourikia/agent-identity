@@ -1,0 +1,30 @@
+[
+  {
+    "ts": "2026-08-19T10:00:00Z",
+    "principal": "agent:orchestrator",
+    "action": "delegate",
+    "target": "agent:research",
+    "risk": 20
+  },
+  {
+    "ts": "2026-08-19T10:02:00Z",
+    "principal": "agent:research",
+    "action": "read",
+    "target": "vector-db",
+    "risk": 25
+  },
+  {
+    "ts": "2026-08-19T10:03:00Z",
+    "principal": "agent:research",
+    "action": "token_exchange",
+    "target": "claims-api",
+    "risk": 80
+  },
+  {
+    "ts": "2026-08-19T10:04:00Z",
+    "principal": "agent:research",
+    "action": "kms_sign",
+    "target": "kms:key:claims",
+    "risk": 95
+  }
+]

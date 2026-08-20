@@ -1,0 +1,10 @@
+{
+  "resource": "https://mcp.claims.example",
+  "authorization_servers": [
+    "https://id.corp.example"
+  ],
+  "scopes_supported": [
+    "knowledge.search",
+    "claims.read"
+  ]
+}

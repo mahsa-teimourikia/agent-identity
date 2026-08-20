@@ -1,0 +1,25 @@
+{
+  "organizations": {
+    "did:web:corp.example": {
+      "status": "trusted",
+      "credential_types": [
+        "AgentRegistrationCredential"
+      ]
+    },
+    "did:web:partner.example": {
+      "status": "trusted",
+      "credential_types": [
+        "PartnerAgentCredential"
+      ]
+    },
+    "did:web:unknown.example": {
+      "status": "untrusted",
+      "credential_types": []
+    }
+  },
+  "allowed_did_methods": [
+    "web",
+    "key"
+  ],
+  "policy_version": "trust-registry-v3"
+}

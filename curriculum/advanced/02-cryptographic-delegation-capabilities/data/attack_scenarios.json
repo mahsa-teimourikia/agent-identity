@@ -1,0 +1,42 @@
+[
+  {
+    "attack": "tampered_claims",
+    "expected": "deny"
+  },
+  {
+    "attack": "wrong_audience",
+    "expected": "deny"
+  },
+  {
+    "attack": "expired_capability",
+    "expected": "deny"
+  },
+  {
+    "attack": "action_escalation",
+    "expected": "deny"
+  },
+  {
+    "attack": "resource_escalation",
+    "expected": "deny"
+  },
+  {
+    "attack": "lifetime_expansion",
+    "expected": "deny"
+  },
+  {
+    "attack": "revoked_parent",
+    "expected": "deny"
+  },
+  {
+    "attack": "replayed_jti",
+    "expected": "deny"
+  },
+  {
+    "attack": "wrong_dpop_key",
+    "expected": "deny"
+  },
+  {
+    "attack": "mcp_token_passthrough",
+    "expected": "deny"
+  }
+]

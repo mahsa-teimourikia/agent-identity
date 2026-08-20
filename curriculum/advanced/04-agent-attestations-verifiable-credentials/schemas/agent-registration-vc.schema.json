@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "issuer",
+    "validFrom",
+    "validUntil",
+    "credentialSubject"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "type": "array",
+      "contains": {
+        "const": "AgentRegistrationCredential"
+      }
+    },
+    "issuer": {
+      "type": "string"
+    },
+    "validFrom": {
+      "type": "string"
+    },
+    "validUntil": {
+      "type": "string"
+    },
+    "credentialSubject": {
+      "type": "object",
+      "required": [
+        "id",
+        "owner",
+        "agentClass"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "agentClass": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

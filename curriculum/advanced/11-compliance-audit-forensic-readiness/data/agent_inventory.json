@@ -1,0 +1,42 @@
+[
+  {
+    "id": "agent:claims",
+    "registered": true,
+    "owner": "claims-ai",
+    "environment": "prod",
+    "risk": "high",
+    "credential_type": "workload",
+    "credential_lifetime_minutes": 10,
+    "last_review_days": 22
+  },
+  {
+    "id": "agent:research",
+    "registered": true,
+    "owner": "claims-ai",
+    "environment": "prod",
+    "risk": "high",
+    "credential_type": "workload",
+    "credential_lifetime_minutes": 15,
+    "last_review_days": 38
+  },
+  {
+    "id": "agent:legacy",
+    "registered": true,
+    "owner": "",
+    "environment": "prod",
+    "risk": "critical",
+    "credential_type": "static_api_key",
+    "credential_lifetime_minutes": 525600,
+    "last_review_days": 181
+  },
+  {
+    "id": "agent:dev",
+    "registered": true,
+    "owner": "lab",
+    "environment": "dev",
+    "risk": "low",
+    "credential_type": "dev_token",
+    "credential_lifetime_minutes": 480,
+    "last_review_days": 12
+  }
+]

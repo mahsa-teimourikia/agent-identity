@@ -1,0 +1,18 @@
+{
+  "receiver": "agent-control-plane",
+  "trusted_transmitters": [
+    "https://id.example",
+    "https://security.example",
+    "https://workload.example"
+  ],
+  "delivery": "push",
+  "deduplicate_by": "jti",
+  "subject_keys": [
+    "agent_id",
+    "session_id",
+    "workload_id",
+    "tenant_id"
+  ],
+  "critical_event_behavior": "fail_closed",
+  "private_event_namespace": "https://security.example/events/agent/"
+}

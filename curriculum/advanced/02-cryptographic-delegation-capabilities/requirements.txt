@@ -1,0 +1,8 @@
+cryptography>=43
+PyJWT>=2.9
+pymacaroons>=0.13
+requests>=2.32
+pandas>=2.2
+networkx>=3.3
+pytest>=8.3
+hypothesis>=6.112

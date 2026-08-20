@@ -1,0 +1,21 @@
+rules:
+  - id: IDT-001
+    name: Revoked identity used
+    severity: critical
+    when: identity_status == revoked
+  - id: IDT-002
+    name: Delegation exceeds parent
+    severity: critical
+    when: delegated_scope !subset parent_scope
+  - id: IDT-003
+    name: Old credential after rotation
+    severity: high
+    when: credential_version != current_version
+  - id: IDT-004
+    name: Human use of workload identity
+    severity: high
+    when: human_using_nhi == true
+  - id: IDT-005
+    name: Telemetry suppression
+    severity: critical
+    when: monitoring_disabled == true

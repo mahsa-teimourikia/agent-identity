@@ -1,0 +1,19 @@
+{
+  "low": [
+    "owner"
+  ],
+  "medium": [
+    "owner",
+    "platform"
+  ],
+  "high": [
+    "owner",
+    "security"
+  ],
+  "critical": [
+    "owner",
+    "security",
+    "risk",
+    "business_authority"
+  ]
+}

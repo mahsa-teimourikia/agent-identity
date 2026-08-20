@@ -1,0 +1,23 @@
+{
+  "agents": [
+    "claims-agent",
+    "research-agent",
+    "payment-agent"
+  ],
+  "tools": [
+    "claim.read",
+    "claim.update",
+    "knowledge.search",
+    "payment.create"
+  ],
+  "attacks": [
+    "prompt requests unauthorized admin tool",
+    "cross-tenant resource substitution",
+    "payment amount changes after approval",
+    "MCP server substitution",
+    "token audience mismatch",
+    "revoked delegation",
+    "stale approval",
+    "agent-to-agent privilege laundering"
+  ]
+}

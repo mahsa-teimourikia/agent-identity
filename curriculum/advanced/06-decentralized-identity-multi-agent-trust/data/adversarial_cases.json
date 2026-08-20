@@ -1,0 +1,58 @@
+[
+  {
+    "case": "did_document_substitution",
+    "expected": "deny"
+  },
+  {
+    "case": "untrusted_did_method",
+    "expected": "deny"
+  },
+  {
+    "case": "wrong_verification_relationship",
+    "expected": "deny"
+  },
+  {
+    "case": "malicious_service_endpoint",
+    "expected": "block"
+  },
+  {
+    "case": "stale_pre_rotation_document",
+    "expected": "refresh_or_deny"
+  },
+  {
+    "case": "deactivated_did",
+    "expected": "deny"
+  },
+  {
+    "case": "self_asserted_enterprise_approval",
+    "expected": "ignore"
+  },
+  {
+    "case": "untrusted_credential_issuer",
+    "expected": "deny"
+  },
+  {
+    "case": "sybil_flood",
+    "expected": "no_trust_from_identifier_count"
+  },
+  {
+    "case": "reputation_collusion",
+    "expected": "insufficient_for_high_risk"
+  },
+  {
+    "case": "delegation_escalation",
+    "expected": "deny"
+  },
+  {
+    "case": "trust_transitivity_assumption",
+    "expected": "deny"
+  },
+  {
+    "case": "resolver_compromise",
+    "expected": "detect_or_fail_safe"
+  },
+  {
+    "case": "method_downgrade",
+    "expected": "deny"
+  }
+]

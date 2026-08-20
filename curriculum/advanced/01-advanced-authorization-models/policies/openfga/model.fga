@@ -1,0 +1,31 @@
+model
+  schema 1.1
+
+type user
+
+type agent
+  relations
+    define operator: [user]
+    define task: [task]
+
+type task
+  relations
+    define principal: [user]
+    define assigned_agent: [agent]
+    define can_read_claim: [claim]
+    define can_update_claim: [claim]
+    define can_call: [tool]
+
+type claim
+  relations
+    define assignee: [user]
+    define reader: [user, agent]
+    define editor: [user, agent]
+    define can_read: reader or editor
+    define can_update: editor
+
+type tool
+  relations
+    define calling_agent: [agent]
+    define permitted_task: [task]
+    define can_call: permitted_task and task from calling_agent

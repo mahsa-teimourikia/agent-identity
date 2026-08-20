@@ -1,0 +1,27 @@
+{
+  "did:web:registry.example": {
+    "types": [
+      "AgentRegistrationCredential"
+    ],
+    "status": "active",
+    "max_ttl_days": 90
+  },
+  "did:web:evaluator.example": {
+    "types": [
+      "AgentEvaluationCredential"
+    ],
+    "status": "active",
+    "max_ttl_days": 14
+  },
+  "did:web:governance.example": {
+    "types": [
+      "AgentGovernanceCredential"
+    ],
+    "status": "active",
+    "max_ttl_days": 30
+  },
+  "did:web:attacker.example": {
+    "types": [],
+    "status": "blocked"
+  }
+}

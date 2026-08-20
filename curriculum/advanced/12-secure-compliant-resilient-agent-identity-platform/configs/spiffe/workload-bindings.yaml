@@ -1,0 +1,10 @@
+trust_domain: corp.example
+bindings:
+  agent:claims-orchestrator:
+    - spiffe://corp.example/prod/claims-orchestrator
+  agent:research:
+    - spiffe://corp.example/prod/research-agent
+federation:
+  - trust_domain: partner.example
+    allowed_ids:
+      - spiffe://partner.example/prod/research-agent

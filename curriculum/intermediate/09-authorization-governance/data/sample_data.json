@@ -1,0 +1,41 @@
+{
+  "agents": [
+    {
+      "agent_id": "claims-agent",
+      "owner": "claims-platform",
+      "status": "active",
+      "risk": "R3"
+    },
+    {
+      "agent_id": "research-agent",
+      "owner": "knowledge-platform",
+      "status": "active",
+      "risk": "R2"
+    },
+    {
+      "agent_id": "legacy-agent",
+      "owner": null,
+      "status": "active",
+      "risk": "R3"
+    }
+  ],
+  "delegations": [
+    {
+      "delegator": "user:alice",
+      "delegatee": "agent:claims-agent",
+      "actions": [
+        "claim.read",
+        "claim.update"
+      ],
+      "resource": "claim:483"
+    },
+    {
+      "delegator": "agent:claims-agent",
+      "delegatee": "agent:research-agent",
+      "actions": [
+        "document.read"
+      ],
+      "resource": "kb:claims"
+    }
+  ]
+}

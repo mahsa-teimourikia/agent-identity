@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Authorization Decision Event",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_type",
+    "decision_id",
+    "timestamp",
+    "principal",
+    "agent",
+    "action",
+    "resource",
+    "policy",
+    "decision"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "event_type": {
+      "const": "authorization.decision"
+    },
+    "decision_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "principal": {
+      "type": "object"
+    },
+    "agent": {
+      "type": "object"
+    },
+    "workload": {
+      "type": "object"
+    },
+    "delegation": {
+      "type": "object"
+    },
+    "task": {
+      "type": "object"
+    },
+    "action": {
+      "type": "object"
+    },
+    "resource": {
+      "type": "object"
+    },
+    "policy": {
+      "type": "object"
+    },
+    "assurance": {
+      "type": "object"
+    },
+    "risk": {
+      "type": "object"
+    },
+    "decision": {
+      "type": "object"
+    },
+    "enforcement": {
+      "type": "object"
+    }
+  }
+}

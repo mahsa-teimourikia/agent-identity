@@ -1,0 +1,84 @@
+[
+  {
+    "id": "T01",
+    "scenario": "stolen agent access token",
+    "expected": [
+      "audience validation",
+      "replay/sender constraint",
+      "revocation"
+    ]
+  },
+  {
+    "id": "T02",
+    "scenario": "over-delegated sub-agent",
+    "expected": [
+      "delegation attenuation",
+      "graph detection",
+      "quarantine"
+    ]
+  },
+  {
+    "id": "T03",
+    "scenario": "tool-mediated lateral movement",
+    "expected": [
+      "tool identity telemetry",
+      "attack-path detection"
+    ]
+  },
+  {
+    "id": "T04",
+    "scenario": "generic signing oracle",
+    "expected": [
+      "structured signing policy",
+      "KMS authorization"
+    ]
+  },
+  {
+    "id": "T05",
+    "scenario": "external trust compromise",
+    "expected": [
+      "federation inventory",
+      "trust suspension playbook"
+    ]
+  },
+  {
+    "id": "T06",
+    "scenario": "human assumes NHI",
+    "expected": [
+      "identity-type signal",
+      "break-glass path"
+    ]
+  },
+  {
+    "id": "T07",
+    "scenario": "telemetry suppression",
+    "expected": [
+      "telemetry health detection",
+      "fail-safe policy"
+    ]
+  },
+  {
+    "id": "T08",
+    "scenario": "persistence via new OAuth client",
+    "expected": [
+      "identity creation detection",
+      "revoke client"
+    ]
+  },
+  {
+    "id": "T09",
+    "scenario": "credential in model prompt",
+    "expected": [
+      "secret isolation",
+      "redaction"
+    ]
+  },
+  {
+    "id": "T10",
+    "scenario": "revoked identity execution",
+    "expected": [
+      "runtime status check",
+      "deny"
+    ]
+  }
+]

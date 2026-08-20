@@ -1,0 +1,19 @@
+model
+  schema 1.1
+
+type user
+
+type tenant
+  relations
+    define member: [user, agent]
+
+type agent
+  relations
+    define operator: [user]
+    define delegate: [agent]
+
+type claim
+  relations
+    define tenant: [tenant]
+    define reader: [user, agent]
+    define can_read: reader

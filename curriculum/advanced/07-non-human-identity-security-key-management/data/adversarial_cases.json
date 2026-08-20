@@ -1,0 +1,50 @@
+[
+  {
+    "attack": "stolen bearer token",
+    "control": "short lifetime + sender constraint + narrow scope"
+  },
+  {
+    "attack": "private key exfiltration",
+    "control": "KMS/HSM/non-exportable workload key"
+  },
+  {
+    "attack": "token replay",
+    "control": "DPoP/mTLS + jti/nonce where applicable"
+  },
+  {
+    "attack": "audience confusion",
+    "control": "strict aud validation"
+  },
+  {
+    "attack": "credential fan-out",
+    "control": "tool-specific token exchange"
+  },
+  {
+    "attack": "secret in prompt",
+    "control": "credential broker outside model context"
+  },
+  {
+    "attack": "secret in logs",
+    "control": "redaction + telemetry controls"
+  },
+  {
+    "attack": "stale credential after rotation",
+    "control": "bounded overlap + revocation"
+  },
+  {
+    "attack": "compromised CI identity",
+    "control": "separate build/runtime authority"
+  },
+  {
+    "attack": "generic signing oracle",
+    "control": "signing policy + structured requests"
+  },
+  {
+    "attack": "break-glass persistence",
+    "control": "automatic expiry + approval"
+  },
+  {
+    "attack": "orphaned NHI",
+    "control": "ownership + lifecycle automation"
+  }
+]

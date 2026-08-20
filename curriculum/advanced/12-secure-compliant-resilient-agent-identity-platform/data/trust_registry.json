@@ -1,0 +1,20 @@
+{
+  "corp.example": {
+    "status": "active",
+    "type": "spiffe",
+    "local": true
+  },
+  "partner.example": {
+    "status": "active",
+    "type": "spiffe/openid-federation",
+    "allowed_agent_types": [
+      "research"
+    ],
+    "max_delegation_depth": 1
+  },
+  "oldvendor.example": {
+    "status": "disabled",
+    "type": "oidc",
+    "allowed_agent_types": []
+  }
+}

@@ -1,0 +1,7 @@
+cryptography>=43
+PyJWT>=2.9
+pydantic>=2.8
+jsonschema>=4.23
+pandas>=2.2
+networkx>=3.3
+pytest>=8.3

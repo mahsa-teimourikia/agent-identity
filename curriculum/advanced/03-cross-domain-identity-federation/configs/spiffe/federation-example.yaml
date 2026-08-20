@@ -1,0 +1,8 @@
+local_trust_domain: corp.example
+federates_with:
+  - trust_domain: partner.example
+    bundle_endpoint_url: https://spire.partner.example/bundle
+    bundle_endpoint_profile: https_web
+    local_policy:
+      allowed_spiffe_ids:
+        - spiffe://partner.example/prod/research-agent

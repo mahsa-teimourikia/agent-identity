@@ -1,0 +1,18 @@
+{
+  "x509_svid": {
+    "max_lifetime_minutes": 60,
+    "automatic": true
+  },
+  "oauth_access_token": {
+    "max_lifetime_minutes": 15,
+    "automatic": true
+  },
+  "api_key_legacy": {
+    "rotation_days": 30,
+    "migration_target": "federated short-lived credential"
+  },
+  "kms_signing_key": {
+    "rotation": "provider/policy dependent",
+    "purpose_separated": true
+  }
+}

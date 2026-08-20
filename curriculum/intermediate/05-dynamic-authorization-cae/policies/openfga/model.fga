@@ -1,0 +1,18 @@
+model
+  schema 1.1
+
+type user
+
+type agent
+  relations
+    define can_act_on_behalf_of: [user]
+
+type task
+  relations
+    define assignee: [agent]
+    define requester: [user]
+
+type claim
+  relations
+    define viewer: [user, agent]
+    define editor: [user, agent]

@@ -1,0 +1,50 @@
+[
+  {
+    "case": "forged_high_risk_event",
+    "expected": "reject transmitter"
+  },
+  {
+    "case": "forged_low_risk_recovery",
+    "expected": "reject transmitter"
+  },
+  {
+    "case": "duplicate_revocation",
+    "expected": "idempotent"
+  },
+  {
+    "case": "old_high_after_new_low",
+    "expected": "reject stale event"
+  },
+  {
+    "case": "event_flood",
+    "expected": "backpressure"
+  },
+  {
+    "case": "stream_outage_sensitive_write",
+    "expected": "step_up_or_deny"
+  },
+  {
+    "case": "risk_threshold_flapping",
+    "expected": "hysteresis"
+  },
+  {
+    "case": "queued_write_after_quarantine",
+    "expected": "reauthorize_and_deny"
+  },
+  {
+    "case": "cached_allow_after_revocation",
+    "expected": "invalidate"
+  },
+  {
+    "case": "cross_tenant_subject_confusion",
+    "expected": "reject"
+  },
+  {
+    "case": "agent_gaming_detector",
+    "expected": "independent enforcement"
+  },
+  {
+    "case": "quarantine_then_fake_recovery",
+    "expected": "recovery controls"
+  }
+]

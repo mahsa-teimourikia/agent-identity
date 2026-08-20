@@ -1,0 +1,50 @@
+{
+  "tokens": [
+    {
+      "name": "wrong_audience",
+      "sub": "agent:claims",
+      "iss": "https://id.example",
+      "aud": "api://analytics",
+      "expected": "DENY"
+    },
+    {
+      "name": "expired",
+      "sub": "agent:claims",
+      "iss": "https://id.example",
+      "aud": "api://claims",
+      "expired": true,
+      "expected": "DENY"
+    }
+  ],
+  "delegations": [
+    {
+      "name": "scope_escalation",
+      "parent": [
+        "claim.read"
+      ],
+      "child": [
+        "claim.read",
+        "claim.delete"
+      ],
+      "expected": "DENY"
+    },
+    {
+      "name": "depth_abuse",
+      "max_depth": 1,
+      "chain": [
+        "user:alice",
+        "agent:a",
+        "agent:b"
+      ],
+      "expected": "DENY"
+    }
+  ],
+  "resources": [
+    {
+      "name": "cross_tenant",
+      "principal_tenant": "acme",
+      "resource_tenant": "evil",
+      "expected": "DENY"
+    }
+  ]
+}
