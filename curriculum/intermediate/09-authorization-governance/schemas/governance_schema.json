@@ -1,0 +1,36 @@
+{
+  "agents": [
+    "agent_id",
+    "owner",
+    "status",
+    "risk",
+    "last_seen"
+  ],
+  "entitlements": [
+    "principal",
+    "action",
+    "resource",
+    "source",
+    "risk",
+    "last_used",
+    "expires_at"
+  ],
+  "delegations": [
+    "delegator",
+    "delegatee",
+    "actions",
+    "resource",
+    "expires_at",
+    "redelegable",
+    "max_depth"
+  ],
+  "exceptions": [
+    "id",
+    "principal",
+    "permission",
+    "reason",
+    "approved_by",
+    "expires_at",
+    "controls"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "agent:claims": {
+    "registered": true,
+    "owner": "claims-platform",
+    "risk_tier": "high",
+    "approved_workloads": [
+      "spiffe://corp.example/prod/claims-agent"
+    ]
+  },
+  "agent:research": {
+    "registered": true,
+    "owner": "claims-platform",
+    "risk_tier": "medium",
+    "approved_workloads": [
+      "spiffe://corp.example/prod/research-agent"
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+name: Agent authorization adversarial tests
+model_file: ./model.fga
+
+tuples:
+  - user: agent:claims
+    relation: member
+    object: tenant:acme
+  - user: agent:claims
+    relation: reader
+    object: claim:483
+  - user: tenant:acme
+    relation: tenant
+    object: claim:483
+
+tests:
+  - name: claims agent can read assigned claim
+    check:
+      - user: agent:claims
+        object: claim:483
+        assertions:
+          can_read: true
+
+  - name: unrelated agent cannot read claim
+    check:
+      - user: agent:attacker
+        object: claim:483
+        assertions:
+          can_read: false

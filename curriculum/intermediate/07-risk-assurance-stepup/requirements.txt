@@ -1,0 +1,4 @@
+PyJWT>=2.8
+pydantic>=2.7
+rich>=13.7
+matplotlib>=3.8

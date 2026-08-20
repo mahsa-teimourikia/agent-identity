@@ -1,0 +1,24 @@
+[
+  {
+    "decision_id": "d-1",
+    "agent_id": "claims-agent",
+    "action": "claim.read",
+    "resource_type": "claim",
+    "decision": "allow",
+    "reason": "ALLOW_TASK_SCOPE",
+    "risk": "medium",
+    "policy_version": "v19",
+    "latency_ms": 12
+  },
+  {
+    "decision_id": "d-2",
+    "agent_id": "claims-agent",
+    "action": "claim.delete",
+    "resource_type": "claim",
+    "decision": "deny",
+    "reason": "DENY_TASK_SCOPE",
+    "risk": "critical",
+    "policy_version": "v19",
+    "latency_ms": 14
+  }
+]

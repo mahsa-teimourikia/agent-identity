@@ -1,0 +1,22 @@
+{
+  "partner.example": {
+    "status": "active",
+    "oidc_issuer": "https://id.partner.example",
+    "spiffe_trust_domain": "partner.example",
+    "accepted_audiences": [
+      "claims-mcp"
+    ],
+    "allowed_agent_types": [
+      "research"
+    ],
+    "max_ttl_seconds": 600,
+    "max_delegation_depth": 1,
+    "require_sender_constraint": true
+  },
+  "vendor.example": {
+    "status": "disabled",
+    "oidc_issuer": "https://identity.vendor.example",
+    "accepted_audiences": [],
+    "allowed_agent_types": []
+  }
+}

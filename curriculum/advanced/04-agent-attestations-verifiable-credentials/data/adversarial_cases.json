@@ -1,0 +1,50 @@
+[
+  {
+    "case": "forged_signature",
+    "expected": "deny"
+  },
+  {
+    "case": "valid_credential_untrusted_issuer",
+    "expected": "deny"
+  },
+  {
+    "case": "subject_substitution",
+    "expected": "deny"
+  },
+  {
+    "case": "expired_evaluation",
+    "expected": "deny_or_step_up"
+  },
+  {
+    "case": "revoked_registration",
+    "expected": "deny"
+  },
+  {
+    "case": "workload_release_mismatch",
+    "expected": "deny"
+  },
+  {
+    "case": "selective_disclosure_unknown_claim",
+    "expected": "no_privilege"
+  },
+  {
+    "case": "assurance_laundering",
+    "expected": "deny"
+  },
+  {
+    "case": "issuer_compromise",
+    "expected": "deny"
+  },
+  {
+    "case": "conflicting_quarantine_evidence",
+    "expected": "deny"
+  },
+  {
+    "case": "supply_chain_digest_mismatch",
+    "expected": "deny"
+  },
+  {
+    "case": "presentation_replay",
+    "expected": "deny"
+  }
+]

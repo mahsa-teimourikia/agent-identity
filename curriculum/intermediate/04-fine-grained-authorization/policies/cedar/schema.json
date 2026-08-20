@@ -1,0 +1,56 @@
+{
+  "Agent": {
+    "memberOfTypes": [],
+    "shape": {
+      "type": "Record",
+      "attributes": {
+        "id": {
+          "type": "String",
+          "required": true
+        }
+      }
+    }
+  },
+  "Claim": {
+    "memberOfTypes": [],
+    "shape": {
+      "type": "Record",
+      "attributes": {
+        "id": {
+          "type": "String",
+          "required": true
+        }
+      }
+    }
+  },
+  "actions": {
+    "ReadClaim": {
+      "appliesTo": {
+        "principalTypes": [
+          "Agent"
+        ],
+        "resourceTypes": [
+          "Claim"
+        ],
+        "context": {
+          "type": "Record",
+          "attributes": {}
+        }
+      }
+    },
+    "CreatePayment": {
+      "appliesTo": {
+        "principalTypes": [
+          "Agent"
+        ],
+        "resourceTypes": [
+          "Claim"
+        ],
+        "context": {
+          "type": "Record",
+          "attributes": {}
+        }
+      }
+    }
+  }
+}

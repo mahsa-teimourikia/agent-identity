@@ -1,0 +1,45 @@
+{
+  "agent:claims-orchestrator": {
+    "registered": true,
+    "owner": "claims-ai",
+    "purpose": "claims processing",
+    "risk": "high",
+    "status": "active",
+    "environment": "prod",
+    "approved_workloads": [
+      "spiffe://corp.example/prod/claims-orchestrator"
+    ],
+    "credential_type": "workload",
+    "review_age_days": 21,
+    "review_interval_days": 60,
+    "monitoring": true
+  },
+  "agent:research": {
+    "registered": true,
+    "owner": "claims-ai",
+    "purpose": "claims research",
+    "risk": "medium",
+    "status": "active",
+    "environment": "prod",
+    "approved_workloads": [
+      "spiffe://corp.example/prod/research-agent"
+    ],
+    "credential_type": "workload",
+    "review_age_days": 34,
+    "review_interval_days": 90,
+    "monitoring": true
+  },
+  "agent:legacy": {
+    "registered": true,
+    "owner": "",
+    "purpose": "legacy integration",
+    "risk": "critical",
+    "status": "active",
+    "environment": "prod",
+    "approved_workloads": [],
+    "credential_type": "static_api_key",
+    "review_age_days": 190,
+    "review_interval_days": 30,
+    "monitoring": false
+  }
+}

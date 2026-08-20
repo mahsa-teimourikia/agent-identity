@@ -1,0 +1,66 @@
+[
+  {
+    "schema_name": "agent.identity.event",
+    "schema_version": "1.0",
+    "event_type": "agent.invoke",
+    "timestamp": "2026-08-19T10:00:00Z",
+    "trace_id": "trace-42",
+    "actor": {
+      "id": "user:alice",
+      "type": "human"
+    },
+    "resource": "agent:claims"
+  },
+  {
+    "schema_name": "agent.identity.event",
+    "schema_version": "1.0",
+    "event_type": "delegation.issued",
+    "timestamp": "2026-08-19T10:00:01Z",
+    "trace_id": "trace-42",
+    "actor": {
+      "id": "agent:claims",
+      "type": "agent"
+    },
+    "subject": {
+      "id": "user:alice"
+    },
+    "resource": "agent:research",
+    "delegation_id": "dlg-9"
+  },
+  {
+    "schema_name": "agent.identity.event",
+    "schema_version": "1.0",
+    "event_type": "authorization.decision",
+    "timestamp": "2026-08-19T10:00:02Z",
+    "trace_id": "trace-42",
+    "actor": {
+      "id": "agent:research",
+      "type": "agent"
+    },
+    "subject": {
+      "id": "user:alice"
+    },
+    "action": "documents.read",
+    "resource": "vector:index:claims",
+    "decision": "permit",
+    "policy": {
+      "id": "doc-access",
+      "version": "17"
+    },
+    "delegation_id": "dlg-9"
+  },
+  {
+    "schema_name": "agent.identity.event",
+    "schema_version": "1.0",
+    "event_type": "tool.execute",
+    "timestamp": "2026-08-19T10:00:03Z",
+    "trace_id": "trace-42",
+    "actor": {
+      "id": "agent:research",
+      "type": "agent"
+    },
+    "action": "search",
+    "resource": "mcp:policy-search",
+    "delegation_id": "dlg-9"
+  }
+]

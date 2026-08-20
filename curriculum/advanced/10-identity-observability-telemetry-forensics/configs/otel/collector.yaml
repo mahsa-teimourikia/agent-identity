@@ -1,0 +1,31 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  batch: {}
+  attributes/security:
+    actions:
+      - key: deployment.environment
+        action: upsert
+        value: training
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+
+exporters:
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/security, batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/security, batch]
+      exporters: [debug]

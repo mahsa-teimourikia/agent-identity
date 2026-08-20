@@ -1,0 +1,4 @@
+PyJWT>=2.8
+cryptography>=42
+requests>=2.31
+rich>=13.7

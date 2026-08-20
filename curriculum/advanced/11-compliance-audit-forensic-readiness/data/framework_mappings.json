@@ -1,0 +1,35 @@
+{
+  "AG-01": [
+    "NIST IA",
+    "NIST CA",
+    "ISO identity management",
+    "CIS 5"
+  ],
+  "AC-01": [
+    "NIST AC",
+    "NIST SP 800-207",
+    "ISO access rights",
+    "CIS 6",
+    "OWASP NHI5"
+  ],
+  "CR-01": [
+    "NIST IA",
+    "ISO authentication information",
+    "OWASP NHI2",
+    "OWASP NHI7"
+  ],
+  "DG-01": [
+    "NIST AC",
+    "NIST agent identity initiative"
+  ],
+  "LC-01": [
+    "NIST AC",
+    "CIS 5",
+    "OWASP NHI1"
+  ],
+  "AU-01": [
+    "NIST AU",
+    "ISO logging/monitoring",
+    "CIS 8"
+  ]
+}

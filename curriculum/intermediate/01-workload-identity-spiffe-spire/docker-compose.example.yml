@@ -1,0 +1,20 @@
+services:
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.12.4
+    hostname: spire-server
+    volumes:
+      - ./spire/server:/opt/spire/conf/server
+    command: ["-config", "/opt/spire/conf/server/server.conf"]
+
+  spire-agent:
+    image: ghcr.io/spiffe/spire-agent:1.12.4
+    hostname: spire-agent
+    depends_on:
+      - spire-server
+    volumes:
+      - ./spire/agent:/opt/spire/conf/agent
+      - spire-agent-socket:/run/spire/sockets
+    command: ["-config", "/opt/spire/conf/agent/agent.conf"]
+
+volumes:
+  spire-agent-socket:

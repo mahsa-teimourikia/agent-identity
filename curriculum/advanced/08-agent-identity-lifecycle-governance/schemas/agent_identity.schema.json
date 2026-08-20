@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Governed Agent Identity",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "owner",
+    "purpose",
+    "environment",
+    "risk_tier",
+    "status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "environment": {
+      "enum": [
+        "dev",
+        "test",
+        "stage",
+        "prod"
+      ]
+    },
+    "risk_tier": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "pending_approval",
+        "approved",
+        "active",
+        "suspended",
+        "quarantined",
+        "retired",
+        "revoked"
+      ]
+    },
+    "review_interval_days": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "delegation_allowed": {
+      "type": "boolean"
+    }
+  }
+}

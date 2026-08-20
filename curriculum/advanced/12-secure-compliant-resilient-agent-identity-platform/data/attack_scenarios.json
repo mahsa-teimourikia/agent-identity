@@ -1,0 +1,62 @@
+[
+  {
+    "id": "A01",
+    "attack": "model spoofs user identity",
+    "expected": "deny"
+  },
+  {
+    "id": "A02",
+    "attack": "unapproved workload claims registered agent",
+    "expected": "deny"
+  },
+  {
+    "id": "A03",
+    "attack": "token exchange scope escalation",
+    "expected": "deny"
+  },
+  {
+    "id": "A04",
+    "attack": "child delegation exceeds parent",
+    "expected": "deny"
+  },
+  {
+    "id": "A05",
+    "attack": "cross-tenant claim substitution",
+    "expected": "deny"
+  },
+  {
+    "id": "A06",
+    "attack": "MCP token passthrough",
+    "expected": "deny"
+  },
+  {
+    "id": "A07",
+    "attack": "external agent trusted without local policy",
+    "expected": "deny"
+  },
+  {
+    "id": "A08",
+    "attack": "payment parameters changed after approval",
+    "expected": "deny"
+  },
+  {
+    "id": "A09",
+    "attack": "revoked token reused",
+    "expected": "deny"
+  },
+  {
+    "id": "A10",
+    "attack": "telemetry suppressed",
+    "expected": "quarantine_or_fail_safe"
+  },
+  {
+    "id": "A11",
+    "attack": "retired identity executes",
+    "expected": "deny"
+  },
+  {
+    "id": "A12",
+    "attack": "expired governance exception",
+    "expected": "block_or_reapprove"
+  }
+]

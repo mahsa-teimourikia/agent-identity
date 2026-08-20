@@ -1,0 +1,17 @@
+model
+  schema 1.1
+type user
+type agent
+  relations
+    define operator: [user]
+    define can_delegate_to: [agent]
+type claim
+  relations
+    define reader: [user, agent]
+    define editor: [user, agent]
+    define can_read: reader or editor
+    define can_update: editor
+type tool
+  relations
+    define invoker: [agent]
+    define can_invoke: invoker

@@ -1,0 +1,20 @@
+{
+  "course": "Intermediate 11",
+  "summary": {
+    "tests": 35,
+    "passed": 33,
+    "failed": 2
+  },
+  "findings": [
+    {
+      "id": "AUTHZ-PEP-001",
+      "severity": "critical",
+      "title": "Direct backend path bypasses PEP"
+    },
+    {
+      "id": "AUTHZ-CACHE-002",
+      "severity": "high",
+      "title": "Cached allow survives delegation revocation"
+    }
+  ]
+}

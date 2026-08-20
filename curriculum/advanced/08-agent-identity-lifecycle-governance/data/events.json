@@ -1,0 +1,27 @@
+[
+  {
+    "type": "owner_departed",
+    "identity": "agt-001",
+    "action": "trigger_review"
+  },
+  {
+    "type": "credential_compromised",
+    "identity": "agt-002",
+    "action": "quarantine"
+  },
+  {
+    "type": "new_write_tool",
+    "identity": "agt-003",
+    "action": "material_change_review"
+  },
+  {
+    "type": "review_overdue",
+    "identity": "agt-004",
+    "action": "finding"
+  },
+  {
+    "type": "exception_expired",
+    "identity": "agt-005",
+    "action": "disable_or_reapprove"
+  }
+]

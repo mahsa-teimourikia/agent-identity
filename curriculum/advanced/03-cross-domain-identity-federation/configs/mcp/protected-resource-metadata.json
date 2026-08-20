@@ -1,0 +1,6 @@
+{
+  "resource": "https://mcp.corp.example",
+  "authorization_servers": [
+    "https://id.corp.example"
+  ]
+}

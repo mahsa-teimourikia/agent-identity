@@ -1,0 +1,13 @@
+services:
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:latest
+    # Training scaffold only.
+    # Pin an approved immutable digest in production.
+    volumes:
+      - ./server.conf:/opt/spire/conf/server/server.conf:ro
+
+  spire-agent:
+    image: ghcr.io/spiffe/spire-agent:latest
+    # Configure node attestation for your environment.
+    depends_on:
+      - spire-server

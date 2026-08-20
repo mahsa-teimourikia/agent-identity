@@ -1,0 +1,15 @@
+flowchart LR
+U[Human / IdP] --> G[Gateway / PEP]
+G --> A[Agent / LLM]
+A --> I[Structured Intent]
+I --> P[PDP]
+P -->|Allow| T[Tool Router / PEP]
+P -->|Step-up| H[Human Approval]
+H --> P
+T --> C[Claims API]
+T --> R[RAG / Memory]
+T --> M[MCP]
+T --> S[Sub-agent]
+G --> E[Evidence]
+P --> E
+T --> E

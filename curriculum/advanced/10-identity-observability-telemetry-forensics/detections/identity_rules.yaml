@@ -1,0 +1,21 @@
+rules:
+  - id: OBS-001
+    name: Revoked identity activity
+    severity: critical
+    condition: identity_status == revoked
+  - id: OBS-002
+    name: Delegation expands authority
+    severity: critical
+    condition: child_scope !subset parent_scope
+  - id: OBS-003
+    name: Policy decision missing enforcement
+    severity: high
+    condition: permit_without_pep_event
+  - id: OBS-004
+    name: Critical tool trace missing identity
+    severity: high
+    condition: critical_tool and actor_id_missing
+  - id: OBS-005
+    name: Telemetry heartbeat missing
+    severity: critical
+    condition: producer_expected and heartbeat_overdue

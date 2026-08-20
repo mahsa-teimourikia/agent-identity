@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Identity Security Event",
+  "type": "object",
+  "required": [
+    "schema_name",
+    "schema_version",
+    "event_type",
+    "timestamp",
+    "trace_id",
+    "actor"
+  ],
+  "properties": {
+    "schema_name": {
+      "const": "agent.identity.event"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "event_type": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "actor": {
+      "type": "object",
+      "required": [
+        "id",
+        "type"
+      ]
+    },
+    "subject": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "action": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resource": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "decision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "delegation_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

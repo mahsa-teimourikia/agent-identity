@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema",
+    "event_type",
+    "timestamp",
+    "trace_id",
+    "actor"
+  ],
+  "properties": {
+    "schema": {
+      "const": "agent.identity.event/1.0"
+    },
+    "event_type": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string"
+    },
+    "actor": {
+      "type": "object"
+    }
+  }
+}

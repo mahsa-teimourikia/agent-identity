@@ -1,0 +1,4 @@
+cryptography>=42.0
+PyJWT>=2.8
+requests>=2.31
+# Optional for real SPIRE environment: Docker + docker compose

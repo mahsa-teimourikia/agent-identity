@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "control_id",
+    "subject",
+    "status",
+    "tested_at"
+  ],
+  "properties": {
+    "control_id": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "pass",
+        "fail",
+        "exception",
+        "not_applicable"
+      ]
+    },
+    "tested_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidence": {
+      "type": "array"
+    }
+  }
+}
