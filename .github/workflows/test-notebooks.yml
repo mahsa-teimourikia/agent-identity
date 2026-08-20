@@ -1,0 +1,31 @@
+name: Test Notebooks
+
+on:
+  push:
+    paths:
+      - 'curriculum/**/*.ipynb'
+      - 'scripts/validate_notebooks.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  pull_request:
+    paths:
+      - 'curriculum/**/*.ipynb'
+      - 'scripts/validate_notebooks.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: uv sync
+      - name: Validate Notebooks
+        run: uv run python scripts/validate_notebooks.py

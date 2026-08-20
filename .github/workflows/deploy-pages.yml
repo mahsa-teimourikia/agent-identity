@@ -1,28 +1,43 @@
 name: Deploy Learning Hub
+
 on:
   push:
     branches: [main]
+    paths:
+      - 'hub/**'
+      - 'quiz/**'
+      - 'assets/**'
+      - 'curriculum/**'
+      - 'scripts/generate_hub_data.py'
+      - 'scripts/custom_questions.py'
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: '3.x'}
-      - run: python -m compileall -q labs && python scripts/validate_notebooks.py
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Generate Hub Data
+        run: python3 scripts/generate_hub_data.py
       - uses: actions/configure-pages@v5
       - run: |
           rm -rf site; mkdir -p site
-          cp -R hub/. site/; mkdir -p site/quiz site/assets
-          cp -R quiz/. site/quiz/; cp -R assets/. site/assets/
-          cp -R docs site/docs; cp -R labs site/labs
+          cp -R hub/. site/
+          mkdir -p site/quiz site/assets
+          cp -R quiz/. site/quiz/
+          cp -R assets/. site/assets/
       - uses: actions/upload-pages-artifact@v3
-        with: {path: site}
+        with:
+          path: site
   deploy:
     needs: build
     runs-on: ubuntu-latest
