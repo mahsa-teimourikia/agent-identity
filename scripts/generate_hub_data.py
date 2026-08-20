@@ -103,12 +103,10 @@ def write_lessons(lessons):
         props = []
         for k, v in l.items():
             if k in ['q', 'step', 'level', 'title', 'summary', 'detail', 'run']:
-                if isinstance(v, str):
-                    props.append(f"{k}:`{v.replace('`', '\\`')}`" if k in ['material', 'lab', 'notebook'] else f"{k}:{json.dumps(v)}")
-                else:
-                    props.append(f"{k}:{json.dumps(v)}")
+                props.append(f"{k}:{json.dumps(v)}")
             elif k in ['material', 'lab', 'notebook']:
-                props.append(f"{k}:`{v}`")
+                escaped_v = v.replace('`', '\\`')
+                props.append(f"{k}:`{escaped_v}`")
 
         obj_str = "{" + ",".join(props) + "}"
         lines.append(obj_str + ("," if i < len(lessons)-1 else ""))
