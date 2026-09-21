@@ -1,7 +1,7 @@
 QUESTIONS_DB = {
     # BEGINNER
     "01-agent-identity-foundations": [
-        ("Which of the following is true about agent identity?", ["Agents share the exact same identity as the user", "An agent should be a first-class principal with its own identity", "Agents cannot have identities"], 1, "An agent must have its own identity to independently assign policy and audit actions."),
+        ("A schema-valid purchase request claims to be from the procurement agent, but verified workload evidence identifies an unapproved development runtime. What should the purchasing API do?", ["Allow it because the declared agent name is correct", "Deny it because the verified workload is not bound to that production agent", "Ask the language model whether the request looks safe"], 1, "The enforcement point must bind verified workload evidence to the governed logical agent and fail closed on a mismatch."),
         ("Why should human, workload, and agent identities remain distinct?", ["To confuse attackers", "They should not remain distinct", "To prevent a development deployment from silently receiving production authority"], 2, "Separating them allows distinct enforcement and boundaries."),
         ("What does delegation mean in the context of agent identity?", ["Giving an agent full permanent access to everything", "Intentionally giving another principal bounded authority", "Writing the code for an agent"], 1, "Delegation passes bounded authority intentionally.")
     ],

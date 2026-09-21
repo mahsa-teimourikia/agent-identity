@@ -34,6 +34,8 @@ Identity answers which human, workload, or delegated agent is acting. Authorizat
 
 Explore the structured lessons in `curriculum/<level>/<module>/`. Each module contains its own README, Python examples, and Jupyter notebooks to explain the concepts and execute the code.
 
+Course improvements are tracked in the [course review ledger](COURSE_REVIEW_PROGRESS.md), including implemented claims, proof artifacts, validation, and the next course in sequence.
+
 ## Curriculum
 
 ### Beginner

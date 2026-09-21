@@ -45,11 +45,13 @@ def parse_curriculum():
 
             detail = summary
 
-            # Find lab and notebook
-            py_files = glob.glob(f"{d}/**/*.py", recursive=True)
+            # A course lab is an explicit, reusable root-level entry point. Test
+            # helpers and incidental Python files must not become learner links.
+            lab_file = os.path.join(d, "lab.py")
+            if not os.path.exists(lab_file):
+                lab_file = None
             ipynb_files = glob.glob(f"{d}/**/*.ipynb", recursive=True)
 
-            py_file = py_files[0] if py_files else None
             ipynb_file = ipynb_files[0] if ipynb_files else None
             
             # Repo base
@@ -64,7 +66,9 @@ def parse_curriculum():
                 'material': f"{repo_base}{readme_path}"
             }
 
-            # Do not generate lab and run fields for .py files per user request
+            if lab_file:
+                lesson['lab'] = f"{repo_base}{lab_file}"
+                lesson['run'] = f"python3 {lab_file}"
             
             if ipynb_file:
                 lesson['notebook'] = f"{repo_base}{ipynb_file}"
