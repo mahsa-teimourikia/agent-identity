@@ -7,7 +7,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | Course | Status | Review focus |
 | --- | --- | --- |
 | Beginner 01 — Agent Identity Foundations | Deep pass complete | Evidence-bound identity, delegation, failure cases, measurable evaluation |
-| Beginner 02 — Humans, Workloads and Agents | Next | Principal taxonomy, requester/actor provenance, impersonation boundaries |
+| Beginner 02 — Humans, Workloads and Agents | Deep pass complete | Principal taxonomy, multi-hop provenance, deployment and delegation relationships |
+| Beginner 03 — Authentication, Credentials and Tokens | Next | Verification, key selection, replay resistance, rotation, sender constraints |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -27,6 +28,24 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed notebook exercises covering baseline, controlled implementation, evaluation, failure injection, and sub-agent attenuation.
 - Learning Hub checkpoint and direct links to the guided notebook and reusable lab.
 - Course-local references prioritize standards, primary documentation, and clearly label emerging work.
+
+## Beginner 02 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| Human, application, agent, workload, service, and resource identities answer different questions | README taxonomy and worked travel path | `PrincipalKind` and governed `Principal` registry in `lab.py` | Valid-path test asserts every distinct identity |
+| A logical agent must be bound to an approved application and runtime | README deployment model and notebook trace | `DeploymentBinding` matches application, agent, workload, environment, version, and status | Spoofed-agent, application-collision, development, and disabled-workload tests |
+| Multi-agent attribution is an ordered relationship chain | README propagation and multi-agent sections | Canonical `actor_chain`, `parent_actor_id`, and pairwise `DelegationEdge` validation | Missing-parent, cyclic-chain, and task-substitution tests |
+| Presented identity labels are not validated principals | README failure modes and notebook baseline | Separate presented/validated decision fields | Denial non-promotion test |
+| Shared accounts create security and attribution collisions | README evaluation and notebook comparison | Collapsed-platform baseline versus provenance-bound control | Defined identity-collision and unauthorized-success metrics |
+
+## Beginner 02 — validation record
+
+- Ten deterministic scenarios: one valid multi-hop path and nine adversarial, mapping, chain, tenant, or lifecycle failures.
+- Eight focused unit tests for identity separation, deployment binding, chain topology, task delegation, lifecycle, denial semantics, and metric populations.
+- Lab-backed notebook covering taxonomy, relationship inspection, baseline, controlled trace, evaluation, reordered-chain failure injection, lifecycle failure, and production mapping.
+- Learning Hub checkpoint asks for a resource-side judgment when the authenticated workload and claimed agent disagree.
+- State-of-the-art review distinguishes established platform/workload mechanisms, emerging agent identity practice, and active IETF drafts.
 
 ## Review sequence
 

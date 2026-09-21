@@ -6,7 +6,7 @@ QUESTIONS_DB = {
         ("What does delegation mean in the context of agent identity?", ["Giving an agent full permanent access to everything", "Intentionally giving another principal bounded authority", "Writing the code for an agent"], 1, "Delegation passes bounded authority intentionally.")
     ],
     "02-humans-workloads-agents": [
-        ("What is the primary difference between a human identity and a workload identity?", ["Workload identity represents executing software, while human identity represents a person.", "They are the same.", "Human identity is only for UI access."], 0, "Workloads need verifiable identities distinct from humans."),
+        ("The booking API authenticates the corporate research workload, but the request envelope claims the booking-specialist agent and names a valid employee. What should it do?", ["Allow because the employee is valid", "Allow because both workloads use the corporate trust domain", "Deny because the workload is not the approved deployment for the claimed agent and application"], 2, "A corporate workload credential does not prove a different logical agent, application binding, or delegation path."),
         ("In an agent request context, what does the 'requester' represent?", ["The tool being called", "The principal that initiated the business intent", "The IP address of the server"], 1, "Requester maps to who originally asked for the action."),
         ("Why is it dangerous to simply forward a user's token directly to an agent?", ["Because tokens are heavy", "It hides the agent as an actor and gives it all of the user's permissions", "Because tokens expire too quickly"], 1, "Forwarding a bearer token is impersonation, masking the true actor and bypassing least privilege.")
     ],
