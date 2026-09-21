@@ -1,2 +1,4 @@
-# Standard-library implementation lab
-# Python >= 3.10 recommended
+# Core lab: Pydantic 2.x plus the Python standard library.
+# Python >= 3.10 recommended.
+# The notebook also uses the repository's pandas and matplotlib dependencies.
+# Optional exercises can use the official MCP Python SDK, OpenFGA SDK, or OPA.
