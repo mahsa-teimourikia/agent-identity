@@ -10,7 +10,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | Beginner 02 — Humans, Workloads and Agents | Deep pass complete | Principal taxonomy, multi-hop provenance, deployment and delegation relationships |
 | Beginner 03 — Authentication, Credentials and Tokens | Deep pass complete | Token profiles, issuer-bound key selection, rotation, replay, observable decisions |
 | Beginner 04 — Authorization for Agents | Deep pass complete | Default deny, policy models, scoped delegation, approval receipts, PEP/PDP enforcement |
-| Beginner 05 — Least-Privilege Tool Access | Next | Tool catalogs, argument constraints, credentials, approvals, runtime enforcement |
+| Beginner 05 — Least-Privilege Tool Access | Deep pass complete | Tool discovery/execution, typed contracts, credentials, egress, approval, budgets, verified effects |
+| Beginner 06 — Agent Identity Lifecycle | Next | Registration, ownership, lifecycle state, rotation, recertification, revocation |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -87,6 +88,27 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed notebook covering trust boundaries, role-only baseline, hardened PEP/PDP flow, approval obligations, failure injection, evaluation, retrieval, attenuation, and common policy-engine mappings.
 - Learning Hub checkpoint asks for a cross-tenant authorization judgment rather than a PDP vocabulary definition.
 - Current references prioritize NIST, Zanzibar, OPA, Cedar, Amazon Verified Permissions, OpenFGA, and the final OpenID AuthZEN Authorization API 1.0 specification.
+
+## Beginner 05 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| Discovery minimization does not replace execution authorization | README boundary and notebook visible catalog | `visible_tools()` plus independent `ToolGateway.invoke()` checks | hidden cancellation and shell direct-call tests |
+| Typed arguments are necessary but not sufficient | README schema/policy separation and notebook JSON Schema | strict Pydantic input models plus `_authorize_arguments()` | extra URL, price, airline, recipient, resource, and tenant cases |
+| Credentials remain behind the gateway and narrower than service authority | README credential model and notebook lease inspection | `CredentialBroker` issues audience/scope/operation-bound non-secret metadata | lease-field and decision-evidence tests |
+| High-risk approval binds one exact operation | README approval lifecycle and notebook challenge | typed `ApprovalReceipt`, canonical request digest, single-use store | missing/altered approval and exact retry reconciliation tests |
+| Retry safety requires stable operations and reconciliation | README unknown-outcome mechanics and notebook failure injection | service idempotency ledger and digest comparison | lost-response recovery and changed-request conflict tests |
+| Tool outputs and claimed success are untrusted | README result boundary and notebook malformed-output injection | strict output models and execution receipts | malformed instruction result is denied and not promoted |
+| Tool safety includes egress, budgets, lifecycle, and policy availability | production chapter and adversarial matrix | fixed catalog egress, task allowlist, atomic counters, fail-closed gateway | egress, budget, expiry/cancellation, and outage tests |
+| MCP schemas/annotations carry contracts but not authority | technology/state-of-art sections and notebook mapping | `mcp_tool_definitions()` emits authorized Pydantic schemas and cautious hints | definition visibility/schema/annotation test |
+
+## Beginner 05 — validation record
+
+- Twenty deterministic scenarios producing twenty-four attempts: six expected terminal successes, seventeen expected denials or approval challenges, and one unknown outcome followed by reconciliation.
+- Nineteen focused tests for identity separation, discovery/execution, strict schemas, tenant/resource/argument constraints, exact approval, credentials, egress, budgets, task lifecycle, output validation, idempotency, failure behavior, evidence, and metric populations.
+- Lab-backed notebook covers catalog/schema inspection, unsafe baseline, hardened gateway, approval, exact retry, unknown outcomes, egress injection, budgets, credential isolation, result validation, MCP mapping, and quantitative evaluation.
+- Learning Hub checkpoint tests whether learners distinguish MCP risk hints from trusted enforcement.
+- Current references prioritize the MCP 2026-07-28 specification and official SDK, Pydantic/JSON Schema documentation, OpenFGA, OWASP, and NIST.
 
 ## Review sequence
 

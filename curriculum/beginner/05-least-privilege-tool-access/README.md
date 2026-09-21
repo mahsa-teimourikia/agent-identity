@@ -1,1439 +1,637 @@
 # Beginner 05 — Least-Privilege Tool Access for Agents
 
-![Least-Privilege Tool Access for Agents](images/least-privilege-tool-access.png)
+Tools turn model output into reads, messages, purchases, cancellations, code execution, and other real-world effects. A tool name in model context is therefore part of the attack surface, while a successful tool call is a security-sensitive transaction—not merely another generated token.
 
-> **Goal:** design the agent/tool boundary so an agent receives only the tools, operations, resources, arguments, credentials, and execution authority required for the current task.
+This chapter builds a deterministic travel-agent gateway. The model may propose a tool and arguments. Trusted application code derives identity, minimizes discovery, validates input, authorizes the current task/resource, checks approval and egress, brokers a narrow credential, applies budgets, executes a local simulator, validates the result, reconciles uncertain outcomes, and records evidence.
 
-Agents become operationally powerful through **tools**:
+> **Course thesis:** after this course, you can explain, implement, attack-test, evaluate, and productionize a tool gateway that constrains discovery and every invocation across identity, task, resource, arguments, credentials, approval, egress, budgets, and verified execution.
 
-```text
-LLM
- |
- +--> search
- +--> database
- +--> email
- +--> ticketing
- +--> payments
- +--> cloud administration
- +--> code execution
-```
+> **Goal:** Build and evaluate a least-privilege tool gateway that gives an agent only the capabilities required for one task and prevents model output from becoming authority.
 
-The security question is therefore not merely:
+## Learning outcomes
 
-> Can this agent call this tool?
+By the end, you can:
 
-A production system should ask:
+1. explain why tool discovery and tool execution are separate authorization boundaries;
+2. design narrow business capabilities instead of generic shell, SQL, or HTTP primitives;
+3. derive requester, actor, workload, and tenant from authenticated application state;
+4. define strict input and output contracts with Pydantic and JSON Schema;
+5. enforce task, resource, argument, amount, recipient, egress, and lifecycle constraints;
+6. bind high-risk approval to one exact operation and consume it safely;
+7. broker short-lived credential authority without exposing secrets to the model;
+8. enforce call/chain/retry budgets and fail closed on policy failure;
+9. distinguish retry, idempotency, reconciliation, and duplicate effects;
+10. validate untrusted tool results before returning them to model context; and
+11. map the same gateway contract to MCP, policy engines, credential brokers, sandboxes, and network controls.
 
-> Can this authenticated agent, acting for this requester and task, invoke this operation on this resource with these arguments, using this credential, at this time, without violating approval, risk, rate, egress, or delegation constraints?
+## Prerequisites
 
-That is **least-privilege tool access**.
+- [Beginner 01 — Agent Identity Foundations](../01-agent-identity-foundations/README.md)
+- [Beginner 02 — Humans, Workloads and Agents](../02-humans-workloads-agents/README.md)
+- [Beginner 03 — Authentication, Credentials and Tokens](../03-authentication-credentials-tokens/README.md)
+- [Beginner 04 — Authorization for Agents](../04-authorization-for-agents/README.md)
+- basic Python, APIs, JSON, and unit testing
 
----
+Course 04 established the PEP/PDP boundary. This course applies it to tool discovery, input/output contracts, credential use, and effects. It does not repeat token verification or policy-language internals.
 
-# Learning outcomes
+## Scenario, boundaries, and success criteria
 
-You will learn to:
+Northstar Travel gives an assistant three task-scoped capabilities:
 
-- distinguish tool discovery, invocation, and resource authorization;
-- create a tool catalog and security metadata;
-- classify tools by impact and blast radius;
-- expose tools dynamically instead of giving every agent every tool;
-- enforce tool-level and resource-level authorization;
-- validate arguments independently of model output;
-- constrain amounts, destinations, commands, paths, tenants, and recipients;
-- separate read, write, destructive, financial, administrative, and external actions;
-- isolate credentials from model context;
-- use scoped credentials and credential brokers;
-- design approval gates for high-impact actions;
-- implement rate, retry, egress, and tool-chain budgets;
-- prevent privilege escalation through legitimate tools;
-- understand current MCP authorization patterns;
-- audit tool invocations and authorization evidence.
+- search flights from approved infrastructure;
+- book an approved airline for Alice's exact trip within CAD 1,000, with manager approval; and
+- send an itinerary only to an internal corporate address.
 
----
+Cancellation and shell execution exist in the platform catalog but are not visible or callable for this task. The production workload, Alice, the travel agent, North tenant, task, trip, tool set, price, airline, destinations, egress hosts, call counts, and expiry are independently bounded.
 
-# 1. Why tools are a security boundary
+The system must block:
 
-An LLM by itself normally produces data.
+- direct calls to undiscovered or ungranted tools;
+- actor/workload substitution and cross-tenant trips;
+- extra arguments such as a caller-controlled callback URL;
+- price, airline, recipient, and egress expansion;
+- missing, altered, expired, self-issued, or replayed approval;
+- expired/cancelled tasks and exhausted budgets;
+- malformed downstream results and policy outages;
+- changed requests that reuse an operation ID; and
+- duplicate external effects after a lost response.
 
-A tool turns model output into effects.
+Success means all labelled outcomes match, all legitimate terminal attempts complete, no blocked attempt is dispatched or causes an effect, uncertain execution is reconciled before retry, no duplicate effect occurs, and every decision has complete public evidence.
 
-```text
-"Delete account 483"
-```
+### Non-goals
 
-is text until an execution component converts it into:
-
-```http
-DELETE /accounts/483
-```
-
-That transition is a trust boundary.
-
-```text
-UNTRUSTED / PROBABILISTIC
-Agent reasoning
-      |
-      | proposed invocation
-      v
----------------- TRUST BOUNDARY ----------------
-      |
-Tool Gateway / Enforcement
-      |
-      v
-REAL-WORLD EFFECT
-```
-
-Never make the model the final enforcement mechanism.
+The lab does not call an airline, send email, execute a shell, or hold credentials. Its downstream service and credential leases are synthetic. Fixture results demonstrate policy behavior, not the security, latency, or quality of MCP, Pydantic, a model, or an airline API.
 
 ---
 
-# 2. Least agency and least privilege
-
-Traditional least privilege says:
-
-> Give a principal only the authority required to perform its function.
-
-For agents, extend this to **least agency**:
+## 1. Mental model: a tool call is a transaction
 
 ```text
-minimum tools
-+
-minimum operations
-+
-minimum resources
-+
-minimum arguments/ranges
-+
-minimum credential privilege
-+
-minimum duration
-+
-minimum delegation depth
-+
-minimum autonomous impact
+model proposes ToolRequest
+          │
+          ▼
+tool gateway / PEP
+  1 identity and task
+  2 tool permission
+  3 typed arguments
+  4 resource/business policy
+  5 approval + egress + budget
+  6 credential lease
+  7 idempotent execution
+  8 result validation
+  9 receipt + decision evidence
+          │
+          ▼
+verified output or typed denial/unknown outcome
 ```
 
-OWASP's current AI Agent Security guidance recommends minimum task-specific tools, per-tool permission scoping, explicit authorization for sensitive operations, human oversight for high-impact actions, structured outputs, and hard limits on retries/tool chains.
-
-The 2026 OWASP Agentic Top 10 goes further: per-tool least-privilege profiles should include scopes, maximum rates, egress allowlists, and minimal CRUD capabilities.
-
----
-
-# 3. Tool catalog
-
-Treat tools as governed assets rather than arbitrary Python functions.
-
-Example catalog:
-
-```yaml
-tools:
-  - id: tool:orders.read
-    owner: team:commerce
-    risk: low
-    effect: read
-    credential_profile: orders-readonly
-
-  - id: tool:refund.create
-    owner: team:payments
-    risk: high
-    effect: financial
-    credential_profile: refunds-limited
-
-  - id: tool:customer.delete
-    owner: team:customer-platform
-    risk: critical
-    effect: destructive
-    approval: human
-```
-
-Useful metadata:
+The model supplies:
 
 ```text
-owner
-description
-version
-risk class
-effect type
-allowed agents
-allowed resources
-argument schema
-credential profile
-approval requirements
-rate limits
-egress policy
-audit requirements
+operation ID, task ID, tool name, candidate arguments
 ```
 
----
-
-# 4. Tool risk classification
-
-A useful starting taxonomy:
-
-| Class | Examples | Typical controls |
-|---|---|---|
-| Read-only | search, lookup | authz, resource filter |
-| Internal write | update ticket | scoped write + validation |
-| External communication | email, Slack send | recipient/content controls |
-| Financial | refund, purchase | amount limit + approval |
-| Destructive | delete, revoke | strong approval / deny |
-| Administrative | IAM/config change | privileged workflow |
-| Code execution | shell/Python | sandbox + strict policy |
-| Credential/security | rotate key, grant role | highly restricted |
-
-Do not classify a tool only by its name.
-
-A "search" tool that can send arbitrary outbound HTTP requests may have substantial egress risk.
-
----
-
-# 5. Tool exposure is itself a control
-
-Bad:
-
-```python
-tools = ALL_REGISTERED_TOOLS
-```
-
-Every prompt exposes:
+Trusted application state supplies:
 
 ```text
-read_customer
-update_customer
-delete_customer
-send_email
-execute_shell
-create_admin
-transfer_money
-...
+requester, actor, workload, tenant, task grant, resource ownership,
+policy, approval, budget, egress policy, credential profile, effect receipt
 ```
 
-Better:
+The central boundary remains:
 
 ```text
-Agent identity + task + requester
-               |
-               v
-      authorization filter
-               |
-               v
-        allowed tool set
-               |
-               v
-              LLM
+model / agent -> proposes, predicts, extracts, recommends
+trusted application -> validates, authorizes, persists, executes, verifies
 ```
 
-The model should ideally see only the tools relevant and authorized for the current task.
+## 2. Least privilege and least agency
 
-This reduces:
+Traditional least privilege asks which permissions a principal needs. Agent systems add **least agency**: what autonomy, tools, sequence length, retries, destinations, and side effects are necessary for this task?
 
-- accidental selection;
-- prompt-injection attack surface;
-- tool confusion;
-- unnecessary autonomy;
-- blast radius.
+An authorization envelope can be modeled as:
 
-But filtering discovery is **not sufficient**. Authorization must be checked again at execution.
+\[
+E = (I, T, R, A, C, P, G, B, L)
+\]
 
----
+where:
 
-# 6. Discovery authorization versus execution authorization
+- \(I\): verified requester/actor/workload/tenant identity;
+- \(T\): task and lifecycle state;
+- \(R\): resource set;
+- \(A\): allowed tool/actions;
+- \(C\): argument constraints;
+- \(P\): approval/authorization policy;
+- \(G\): downstream credential and egress scope;
+- \(B\): call, cost, time, and chain budgets; and
+- \(L\): lifetime/revocation boundary.
 
-A secure design performs at least two controls:
+An invocation is eligible only if every required dimension matches. A tool-level allow without a resource or argument check is incomplete.
 
-```text
-1. DISCOVERY
-Which tools may this agent see?
+## 3. Tool catalog and capability design
 
-2. EXECUTION
-May this exact invocation execute now?
-```
+A governed catalog records application-owned facts:
 
-Why re-check?
+- canonical tool name and owner;
+- effect and risk class;
+- strict input and output schemas;
+- credential audience/scopes;
+- fixed egress destination;
+- whether approval is required;
+- idempotency behavior;
+- open-world behavior; and
+- lifecycle/version information.
 
-Because between discovery and execution:
+The catalog is policy input. Tool descriptions and annotations from an untrusted server are not proof of behavior.
 
-```text
-permission may be revoked
-task may expire
-risk may change
-resource may differ
-arguments may exceed limits
-approval may be absent
-```
+### Effect and risk classification
 
-Current OpenFGA MCP guidance recommends exactly this pattern: filter the tool list to authorized tools and check authorization again when the tool is invoked. citeturn0search0turn0search1
+| Effect | Examples | Typical controls |
+| --- | --- | --- |
+| read | search flights, inspect trip | resource filtering, rate/volume limits, output validation |
+| financial write | book flight, issue refund | exact approval, amount ceiling, idempotency, receipt |
+| communication | send itinerary/message | recipient and egress allowlists, content/data-loss checks |
+| destructive | cancel booking, delete data | narrow grant, strong approval, recovery/rollback |
+| code execution | shell, SQL, browser script | avoid when possible; sandbox, filesystem/network policy, budget |
 
----
+Risk is contextual. A “read” tool can exfiltrate sensitive data; a “send” tool can become dangerous when chained after it. Classifications drive controls but do not replace policy.
 
-# 7. Tool-level authorization is not enough
-
-Suppose:
-
-```text
-agent can_call tool:drive
-```
-
-The tool can access:
-
-```text
-folder:project-atlas
-folder:executive
-folder:legal
-folder:payroll
-```
-
-Tool permission alone is too coarse.
-
-You also need:
-
-```text
-tool:drive
-resource:folder:project-atlas
-action:file:read
-```
-
-OpenFGA's current agent guidance explicitly separates tool authorization from resource-level permission checks. citeturn0search0
-
----
-
-# 8. Argument-level authorization
-
-This is one of the most important agent controls.
-
-Consider:
-
-```python
-refund(order_id, amount)
-```
-
-Tool-level check:
-
-```text
-agent may call refund
-```
-
-is not enough.
-
-You also need:
-
-```text
-order_id belongs to authorized tenant
-amount <= 200
-currency == CAD
-reason in allowed set
-task targets order_id
-```
-
-Or:
-
-```python
-send_email(to, subject, body)
-```
-
-may require:
-
-```text
-recipient domain in allowlist
-no BCC
-attachment classification <= internal
-max recipients <= 5
-human approval if external
-```
-
-The tool gateway must validate arguments after model generation and before execution.
-
----
-
-# 9. Schema validation versus authorization
-
-Schema validation:
-
-```json
-{
-  "amount": 9000
-}
-```
-
-may be perfectly valid according to:
-
-```text
-amount: number
-```
-
-but unauthorized according to:
-
-```text
-amount <= 200
-```
-
-Therefore:
-
-```text
-valid syntax != authorized operation
-```
-
-You need both.
-
----
-
-# 10. Parameter allowlists
-
-Prefer allowlists for sensitive arguments.
-
-Bad:
-
-```python
-execute(command: str)
-```
-
-Better:
-
-```python
-restart_service(service: Literal[
-    "catalog-api",
-    "search-api"
-])
-```
-
-Bad:
-
-```python
-http_request(url: str)
-```
-
-Better:
-
-```text
-allowed hosts:
-  api.internal.example
-  search.partner.example
-```
-
-Bad:
-
-```python
-read_file(path)
-```
-
-Better:
-
-```text
-root = /workspace/task-928
-deny traversal
-deny symlink escape
-```
-
-The more general the tool, the more difficult safe authorization becomes.
-
----
-
-# 11. Avoid "god tools"
-
-A tool such as:
-
-```text
-execute_shell(command)
-```
-
-can subsume hundreds of capabilities.
-
-So can:
-
-```text
-sql(query)
-http_request(method, url, body)
-cloud_api(service, operation, params)
-python(code)
-```
-
-These tools create very large action spaces.
-
-If they are necessary:
-
-```text
-sandbox
-allowlist
-network isolation
-filesystem isolation
-resource limits
-credential isolation
-command restrictions
-audit
-```
-
-OWASP explicitly warns against unrestricted shell access and recommends sandboxing arbitrary code execution. citeturn0search2turn0search10
-
----
-
-# 12. Separate read and write capabilities
-
-Avoid:
-
-```text
-tool:customer_database
-```
+### Narrow business capability versus god tool
 
 Prefer:
 
 ```text
-tool:customer.read
-tool:customer.update_contact
-tool:customer.add_note
-tool:customer.delete
-```
-
-Why?
-
-Because:
-
-```text
-read != modify != delete
-```
-
-Separating effects improves:
-
-- policy clarity;
-- credential scoping;
-- approval logic;
-- audit;
-- model tool selection;
-- blast-radius control.
-
----
-
-# 13. Separate planning from execution
-
-A powerful pattern:
-
-```text
-Agent plans:
-"Refund CAD 120 to order 123"
-         |
-         v
-Structured proposal
-         |
-         v
-Policy / validation / approval
-         |
-         v
-Executor
-```
-
-Instead of:
-
-```text
-LLM directly owns payment credential
-```
-
-This is especially important for:
-
-```text
-payments
-external communication
-deletion
-IAM changes
-production deployment
-customer-impacting actions
-```
-
-OWASP's current agent guidance recommends separating decision-making from execution for irreversible operations. citeturn0search2
-
----
-
-# 14. Credentials must be narrower than the tool
-
-Suppose the gateway correctly decides:
-
-```text
-agent may read project Atlas
-```
-
-but then calls GitHub using a token with:
-
-```text
-admin access to every repository
-```
-
-The authorization layer reduces logical access, but credential compromise still has a huge blast radius.
-
-Defense in depth:
-
-```text
-Agent policy
-     |
-     v
-Tool Gateway
-     |
-     v
-Scoped Credential
-     |
-     v
-External API
-```
-
-The downstream credential should be as narrow as practical.
-
----
-
-# 15. Credential isolation
-
-The model should not receive:
-
-```text
-API keys
-OAuth access tokens
-cloud keys
-private keys
-database passwords
-MCP server credentials
-```
-
-Architecture:
-
-```text
-LLM
- |
- | tool request
- v
-Tool Gateway
- |
- | authorize
- v
-Credential Broker
- |
- | obtains scoped credential
- v
-External Service
-```
-
-The credential exists in trusted execution infrastructure, not model context.
-
----
-
-# 16. Static credential versus task-scoped grant
-
-Unsafe:
-
-```text
-agent has permanent Jira create/edit/delete token
-```
-
-Better:
-
-```text
-task:928
-  can_call tool:jira.create_ticket
-  resource project:ATLAS
-  expires 14:30
-```
-
-OpenFGA's current task-based authorization model describes agents beginning with no permissions and receiving narrow task-specific grants, including optional expiration and agent binding. citeturn0search7turn0search4
-
----
-
-# 17. Approval gates
-
-Some operations should not be autonomously executable.
-
-Example policy:
-
-```text
-refund <= 200:
-    auto
-
-200 < refund <= 1000:
-    manager approval
-
-refund > 1000:
-    finance + human confirmation
-```
-
-Or:
-
-```text
-send internal email -> auto
-send external email -> approval
-delete production data -> two-person approval
-grant IAM admin -> never available to ordinary agent
-```
-
-Approval should be enforced by trusted code.
-
-A model asking itself:
-
-> "Do I approve this?"
-
-is not independent oversight.
-
----
-
-# 18. Approval binding
-
-Approval should bind to the actual operation.
-
-Weak:
-
-```text
-Alice approved "the refund"
-```
-
-Strong:
-
-```json
-{
-  "approval_id": "approval:837",
-  "actor": "agent:refund",
-  "action": "refund",
-  "resource": "order:123",
-  "amount": 850,
-  "currency": "CAD",
-  "expires_at": "...",
-  "approved_by": "user:manager"
-}
-```
-
-If the amount changes from 850 to 8,500, the approval should no longer match.
-
----
-
-# 19. Egress control
-
-Tool authorization should include **where data can go**.
-
-Example:
-
-```text
-email:
-  allowed_domains:
-    - corp.example
-
-http:
-  allowed_hosts:
-    - api.partner.example
-
-storage:
-  allowed_buckets:
-    - project-atlas-output
-```
-
-This matters because a legitimate tool can become an exfiltration channel.
-
-OWASP's 2026 guidance explicitly includes egress allowlists in per-tool least-privilege profiles. citeturn0search48
-
----
-
-# 20. Rate and budget controls
-
-An authorized action can still be abused through repetition.
-
-Example:
-
-```text
-send_email allowed
-```
-
-does not mean:
-
-```text
-send 50,000 emails
-```
-
-Add budgets:
-
-```yaml
-max_calls_per_task: 10
-max_calls_per_minute: 5
-max_retries: 2
-max_tool_chain_depth: 4
-max_total_cost_usd: 2
-```
-
-OWASP recommends hard limits on tool calls, API usage, retries, recursion, and session duration to contain runaway or adversarial execution. citeturn0search2turn0search8
-
----
-
-# 21. Tool chaining risk
-
-Individually safe tools can combine into unsafe behavior.
-
-Example:
-
-```text
-read_customer_list
-      |
-      v
-format_as_csv
-      |
-      v
-send_email
-```
-
-Each action may be allowed independently.
-
-Together:
-
-```text
-sensitive data -> external destination
-```
-
-This means authorization may need workflow context:
-
-```text
-data classification
-origin
-destination
-previous tool outputs
-task purpose
-chain depth
-```
-
-The OWASP Agentic Top 10 specifically highlights misuse of legitimate tools in multi-step workflows. citeturn0search48
-
----
-
-# 22. Confused deputy at the tool boundary
-
-A tool service may have broader privileges than the calling agent.
-
-```text
-Agent
-  |
-  | "read document 123"
-  v
-Document Tool
-  |
-  | service credential: read ALL documents
-  v
-Storage
-```
-
-If the tool checks only its own credential, it becomes a confused deputy.
-
-It must enforce:
-
-```text
-requester
-actor
-delegated authority
-resource
-```
-
-not merely:
-
-```text
-service itself can access storage
-```
-
----
-
-# 23. Tool description injection and metadata trust
-
-Tool metadata can influence model behavior:
-
-```text
-name
-description
-schema
-examples
-server instructions
-```
-
-Treat remotely supplied tool metadata as potentially untrusted.
-
-Security decisions must not rely on:
-
-```text
-"This tool says it is safe."
-```
-
-Maintain trusted administrative metadata separately:
-
-```text
-risk classification
-owner
-approval policy
-credential profile
-egress rules
-```
-
----
-
-# 24. Tool identity
-
-Tools/services should have identities too.
-
-A secure connection should answer both:
-
-```text
-Who is the agent/workload?
-Who is the tool service?
-```
-
-This prevents the agent from sending sensitive requests to an impersonated service.
-
-Workload identity, mTLS, OAuth audiences, service discovery, and signed metadata can contribute to this assurance.
-
----
-
-# 25. MCP and tool authorization
-
-Model Context Protocol standardizes how clients interact with servers exposing:
-
-```text
-tools
-resources
-prompts
-```
-
-But exposing a tool does not mean every authenticated caller should be allowed to invoke it.
-
-Current OpenFGA guidance for MCP recommends:
-
-```text
-authenticate caller
-      |
-      v
-filter tool list
-      |
-      v
-agent sees authorized tools
-      |
-      v
-tool invocation
-      |
-      v
-re-check authorization
-      |
-      v
-resource-level checks
-```
-
-It also documents time-limited grants and role/group-based tool access. citeturn0search0turn0search1
-
----
-
-# 26. Dynamic tool exposure
-
-Suppose:
-
-```text
-Research Agent
-```
-
-is doing:
-
-```text
-task: summarize quarterly report
-```
-
-It may receive:
-
-```text
-document.search
-document.read
-```
-
-but not:
-
-```text
-document.delete
-email.send
-payment.transfer
-shell.execute
-```
-
-For another task:
-
-```text
-send approved summary to team
-```
-
-the agent may temporarily receive:
-
-```text
-email.send_internal
-```
-
-This is stronger than a permanent global tool catalog.
-
----
-
-# 27. Risk-aware tool routing
-
-You can classify proposed actions before execution:
-
-```text
-LOW
-  search
-  read public data
-
-MEDIUM
-  write internal note
-
-HIGH
-  external communication
-  refund
-  delete
-
-CRITICAL
-  IAM change
-  production secret access
-  large payment
-```
-
-Then enforce:
-
-```text
-LOW      -> policy check
-MEDIUM   -> policy + stronger validation
-HIGH     -> approval
-CRITICAL -> privileged workflow / deny agent
-```
-
-Risk classification is not a substitute for authorization; it determines additional controls.
-
----
-
-# 28. Tool permission manifest
-
-An agent deployment can carry an explicit manifest:
-
-```yaml
-agent: research-agent
-tools:
-  - id: web.search
-    effect: read
-    max_calls: 20
-
-  - id: docs.read
-    effect: read
-    resources:
-      - workspace:atlas
-
-  - id: email.send
-    effect: external-write
-    allowed_domains:
-      - corp.example
-    max_recipients: 5
-    approval_required: true
-```
-
-Benefits:
-
-```text
-reviewable
-versioned
-testable
-diffable
-deployable
-auditable
-```
-
-This can become part of agent onboarding/governance.
-
----
-
-# 29. Enforcement layers
-
-A robust tool call can pass through several controls:
-
-```text
-1 Identity
-      |
-2 Task / delegation
-      |
-3 Tool authorization
-      |
-4 Resource authorization
-      |
-5 Argument validation
-      |
-6 Business guardrails
-      |
-7 Approval
-      |
-8 Credential selection
-      |
-9 Rate / budget controls
-      |
-10 Execution
-      |
-11 Audit
-```
-
-Do not expect one control to solve every layer.
-
----
-
-# 30. Example: safe refund tool
-
-Model proposal:
-
-```json
-{
-  "tool": "refund.create",
-  "arguments": {
-    "order_id": "123",
-    "amount": 120,
-    "currency": "CAD"
-  }
-}
-```
-
-Gateway checks:
-
-```text
-agent may call refund.create?
-task targets order 123?
-requester owns/is authorized for order?
-amount <= delegated amount?
-currency allowed?
-risk acceptable?
-approval required?
-task still active?
-rate limit okay?
-credential scope sufficient?
-```
-
-Only then:
-
-```text
-Payments API
-```
-
----
-
-# 31. Example: safe email tool
-
-Instead of:
-
-```python
-send_email(to, cc, bcc, subject, body, attachments)
-```
-
-for an internal summarizer, expose:
-
-```python
-send_internal_summary(
-    team,
-    subject,
-    body
-)
-```
-
-Trusted code maps:
-
-```text
-team -> approved distribution list
-```
-
-The model cannot arbitrarily choose external recipients.
-
-Tool design itself can encode least privilege.
-
----
-
-# 32. Tool capability design principle
-
-Prefer:
-
-```text
-business capability
+book_approved_flight(trip_id, flight_id, price_cents, currency)
 ```
 
 over:
 
 ```text
-generic technical primitive
-```
-
-Examples:
-
-```text
-create_support_ticket
-```
-
-instead of:
-
-```text
-http_post(url, body)
-```
-
-```text
-read_project_document
-```
-
-instead of:
-
-```text
-sql(query)
-```
-
-```text
-restart_catalog_service
-```
-
-instead of:
-
-```text
+http_request(method, url, headers, body)
+execute_sql(query)
 execute_shell(command)
 ```
 
-Narrow tools reduce the authorization problem.
+Narrow tools reduce the reachable state space, make schemas meaningful, simplify policy, and support domain receipts. Generic primitives may be justified in isolated developer sandboxes, but they require stronger filesystem, process, network, secret, and human controls.
 
----
+## 4. Discovery authorization is not execution authorization
 
-# 33. Audit tool calls
+Discovery minimization keeps unnecessary tools out of model context:
 
-Record:
+```text
+task:travel-483 -> search_flights, book_flight, send_itinerary
+```
+
+It improves usability and reduces accidental or injected selection. It does not grant execution. A caller can bypass model discovery and invoke an endpoint directly, tool lists can be cached, and task state can change after discovery.
+
+Therefore:
+
+1. filter the visible catalog using authenticated request authority;
+2. return it deterministically and with a bounded cache policy; and
+3. re-authorize every invocation at the resource-side gateway.
+
+The MCP 2026-07-28 tools specification explicitly permits `tools/list` to vary by per-request authorization. The lab's `visible_tools()` and `mcp_tool_definitions()` model that behavior, while `ToolGateway.invoke()` independently rechecks execution.
+
+## 5. Schema validation and authorization are different
+
+A strict schema proves that data has the expected shape and types. It does not prove that the caller may use the values.
 
 ```json
 {
-  "requester": "user:alice",
-  "actor": "agent:refund",
-  "workload": "spiffe://corp.example/prod/refund",
-  "task": "task:928",
-  "tool": "refund.create",
-  "resource": "order:123",
-  "arguments_hash": "...",
-  "decision": "allow",
-  "approval": "approval:837",
-  "credential_profile": "refunds-limited",
-  "policy_version": "2026.08.18.2",
-  "trace_id": "..."
+  "trip_id": "trip:north:483",
+  "flight_id": "AC101",
+  "price_cents": 70000,
+  "currency": "CAD"
 }
 ```
 
-Sensitive values should be redacted or hashed where appropriate.
+Pydantic rejects missing fields, wrong types, invalid patterns, and extra fields. Policy then checks:
 
-Do not turn audit logs into credential or PII leakage.
+- the trip belongs to the authenticated requester and tenant;
+- the task grant contains that exact trip and tool;
+- the airline is allowed;
+- the price is within the delegated maximum; and
+- any required approval matches the canonical request digest.
 
----
+The lab uses `ConfigDict(extra="forbid", strict=True)`. A proposed `callback_url` is not silently ignored; it is rejected before egress or execution.
 
-# 34. Revocation
+## 6. Resource and argument-level authorization
 
-Least privilege needs fast revocation.
-
-You may need to revoke:
-
-```text
-agent -> tool
-task -> tool
-user -> delegation
-workload -> agent
-credential
-approval
-tool version
-MCP server
-```
-
-A tool discovered five minutes ago must not remain executable solely because the model remembers it.
-
-Execution authorization must use current state.
-
----
-
-# 35. Fail-closed behavior
-
-If the tool authorization service is unavailable:
+Resource authority belongs at the service boundary even when the downstream credential can access more.
 
 ```text
-payment.transfer -> DENY
-customer.delete -> DENY
-IAM.grant_admin -> DENY
+credential can read all corporate trips
+        does not imply
+Alice's task may read Bob's trip
 ```
 
-Some low-risk read-only operations may have explicitly designed degraded behavior.
+The gateway resolves `trip_id` against authoritative records and checks owner, tenant, state, and grant membership. It never trusts a tenant included in tool arguments.
 
-Do not accidentally implement:
+Argument policy is domain-specific:
 
-```python
-try:
-    authorize()
-except:
-    execute_tool()
-```
+- `origin != destination`;
+- airport codes follow the accepted format;
+- only AC/LH/AA are delegated;
+- price is at most CAD 1,000;
+- itinerary recipients use `@corp.example`; and
+- model input cannot choose the downstream host.
 
----
+## 7. Approval as an operation-bound receipt
 
-# 36. Common anti-patterns
-
-### Every agent gets every tool
-
-Large blast radius.
-
-### "The prompt says don't use it"
-
-Not enforcement.
-
-### Tool-level authorization only
-
-Ignores resource and argument scope.
-
-### Broad external credential
-
-Tool gateway is narrow but compromise bypasses it.
-
-### Credentials in prompts
-
-Leaks security material into an untrusted reasoning environment.
-
-### Generic shell/SQL/HTTP tools
-
-Huge capability surface.
-
-### Discovery filtering without execution checks
-
-Creates TOCTOU/revocation gaps.
-
-### Approval without parameter binding
-
-Approved action can mutate afterward.
-
-### Unlimited retries/tool chaining
-
-Authorized capability becomes denial-of-wallet or abuse.
-
-### Logging raw credentials/tool outputs
-
-Audit infrastructure becomes a data leak.
-
----
-
-# 37. Current state of practice
-
-NIST's 2026 agent identity/authorization work highlights the risk created when software and AI agents receive access to diverse data, tools, and applications and calls for appropriate identity and authorization controls. citeturn0search5
-
-OpenFGA's July 2026 agent guidance now explicitly models:
+High-risk tools return an obligation rather than executing:
 
 ```text
-agents as principals
-task-based authorization
-RAG authorization
-MCP tool authorization
-resource-level checks
-temporal grants
+outcome: approval_required
+obligation: obtain_bound_travel_approval
 ```
 
-citeturn0search4turn0search7
+The receipt binds:
 
-OWASP's current agent security guidance emphasizes:
+- approval and approver IDs plus eligible role;
+- requester, actor, workload, and tenant;
+- task, tool, and stable operation ID;
+- digest of exact arguments;
+- policy version;
+- issue and expiry times; and
+- single-use state.
+
+Changing CAD 700 to CAD 800 invalidates the approval. The approver cannot be the requester or acting agent. The teaching store serializes consumption; production must coordinate approval state and the side effect durably.
+
+An exact retry after a lost response is not a second authorization event. If the operation already committed, the gateway reconciles the same operation ID and digest and returns the existing receipt without consuming approval or creating another effect.
+
+## 8. Credential isolation and audience restriction
+
+The model should never receive an API key, bearer token, session cookie, or credential lease handle. The gateway asks a broker for downstream authority only after authorization.
+
+A useful lease is bound to:
+
+- credential profile and minimal scopes;
+- downstream audience;
+- operation or task;
+- short expiry; and
+- authenticated workload where supported.
+
+The lab creates only non-secret metadata—there is no synthetic token string to accidentally print. In production, use workload identity, token exchange, cloud workload federation, mTLS, or a secret broker to mint/inject short-lived credentials directly into the downstream client.
+
+Logical authorization and credential scope reinforce each other:
 
 ```text
-least-privilege tools
-explicit sensitive-tool authorization
-human oversight
-structured validation
-sandboxing
-rate/retry/tool-chain limits
-audit
+gateway policy limits what should happen
+credential audience/scope limits what can happen downstream
 ```
 
-citeturn0search2turn0search48
+## 9. Egress and tool-chain controls
 
-The direction is toward **zero standing agent privilege**, dynamic task-scoped authority, narrowly designed tools, and enforcement outside the model.
+An allowlisted tool can still exfiltrate data if it accepts arbitrary URLs, recipients, file paths, queries, or commands.
 
----
+The lab fixes the service host in the trusted catalog and intersects it with task-allowed egress. Recipient policy separately limits business destinations. Production enforcement can include DNS/proxy policy, service-mesh identities, Kubernetes NetworkPolicy, cloud firewall rules, sandbox network namespaces, and data-loss controls.
 
-# 38. Practical notebook
+Evaluate tool composition as well as individual tools:
 
-The notebook builds an enterprise travel assistant and implements:
+```text
+read_customer_list + send_external_email = exfiltration path
+read_secret + DNS lookup = covert channel
+download_file + execute_shell = code execution chain
+```
 
-1. insecure unrestricted tool registry;
-2. governed tool catalog;
-3. risk/effect classification;
-4. dynamic tool exposure;
-5. execution-time authorization;
-6. resource-level authorization;
-7. JSON-like argument schema validation;
-8. amount and destination constraints;
-9. approval binding;
-10. scoped credential profiles;
-11. credential broker;
-12. call budgets and rate limits;
-13. tool-chain controls;
-14. safe versus generic tool design;
-15. confused-deputy prevention;
-16. audit evidence;
-17. adversarial bypass tests;
-18. secure tool gateway.
+Bound total calls, per-tool calls, chain depth, wall-clock deadline, bytes, spend, recipients, retries, and parallelism as relevant. Denied validation attempts should be observable but should not necessarily consume the same business-execution budget.
 
----
+## 10. Idempotency, retries, and unknown outcomes
 
-# 39. Enterprise review checklist
+A retry policy must distinguish:
 
-For each tool ask:
+- **logical operation ID:** stable across retries;
+- **attempt ID:** different for each transport attempt;
+- **request digest:** proves the operation content did not change;
+- **execution receipt:** authoritative evidence that an effect committed.
 
-- Who owns it?
-- What identity does the tool service have?
-- Which agents can discover it?
-- Which agents can invoke it?
-- Which tasks can invoke it?
-- Which resources can it touch?
-- Which arguments are allowed?
-- Which arguments require authorization?
-- What is its effect class?
-- What is the maximum blast radius?
-- What credential does it use?
-- Is that credential narrower than the service's total authority?
-- Can the model see the credential?
-- Is external egress constrained?
-- Is an approval required?
-- Is approval bound to exact parameters?
-- What are rate/retry/tool-chain limits?
-- Can the permission expire?
-- Can it be revoked immediately?
-- What happens if authorization is unavailable?
-- What audit evidence is recorded?
-- Could this tool combine with another to bypass policy?
+If a response is lost after booking succeeds, the outcome is unknown. Do not mint a new operation ID and repeat the booking. Query/reconcile the original ID. If it exists with the same digest, return the stored receipt. If the digest differs, deny with `idempotency_conflict`.
 
----
+Authorization denial is terminal until relevant authority changes. Only classified transient failures receive bounded retries. “Try again” must never mean “duplicate the side effect.”
 
-# 40. Key takeaways
+## 11. Tool results remain untrusted
 
-1. Tools convert model output into real-world effects.
-2. Least privilege for agents must include tools, resources, arguments, credentials, duration, and delegation.
-3. Filter tools at discovery, but always authorize again at execution.
-4. Tool permission is not resource permission.
-5. Schema-valid arguments can still be unauthorized.
-6. Narrow business capabilities are safer than generic shell/SQL/HTTP primitives.
-7. Credentials belong behind trusted gateways, not in model context.
-8. High-impact actions need independent approval or privileged workflows.
-9. Tool chaining, rate, egress, and retry limits are part of authorization safety.
-10. The long-term direction is task-scoped, zero-standing agent privilege.
+Tool output can be malformed, stale, cross-tenant, injected, or simply wrong. A successful HTTP response is not proof that the intended business effect happened.
+
+The gateway should:
+
+1. validate output against an expected schema;
+2. bind IDs, amounts, tenant/resources, and operation IDs to the request;
+3. distinguish data from instructions;
+4. verify a downstream receipt or authoritative state for consequential writes; and
+5. minimize content returned to the model.
+
+The lab rejects a result containing an unexpected instruction instead of promoting it to model context. MCP supports `outputSchema`; its tools specification says clients should validate structured results when a schema is supplied.
+
+## 12. Decision and execution evidence
+
+Record observable evidence, not hidden model reasoning:
+
+- request, operation, attempt, task, actor, workload, tenant, tool, and resource IDs;
+- request digest rather than sensitive raw arguments;
+- policy/catalog/grant versions;
+- decision outcome and reason code;
+- approval and execution receipt IDs;
+- credential profile/audience—not token value;
+- egress destination, budget counters, dependency state, and latency;
+- result validation and terminal state.
+
+Separate **decision evidence** from **execution evidence**. “Allowed” proves policy permitted an attempt. Only a verified execution receipt or authoritative reconciliation proves the effect.
 
 ---
 
-# References
+## 13. Architecture patterns
 
-## Agent security
-- OWASP AI Agent Security Cheat Sheet  
-  https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html
-- OWASP Agentic AI security material  
-  https://genai.owasp.org/
+| Pattern | Strengths | Limitations | Best fit |
+| --- | --- | --- | --- |
+| in-process gateway | low latency, easy teaching/debugging | coupled rollout and failure domain | small service, local enforcement |
+| shared tool/MCP gateway | centralized policy, brokering, audit | network dependency and blast radius | enterprise tool platform |
+| per-tool/resource PEP | enforcement closest to effect | duplicated integration work | high assurance, defense in depth |
+| sandboxed generic tools | flexible development capability | difficult business policy and data control | coding/research with hard isolation |
+| workflow-specific capabilities | smallest action surface, clear receipts | more tool design work | consequential repeatable workflows |
 
-## Agent authorization
-- NIST NCCoE — Agent Identity and Authorization concept paper  
-  https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd
-- OpenFGA — Authorization for Agents  
-  https://openfga.dev/docs/modeling/agents
-- OpenFGA — Task-Based Authorization  
-  https://openfga.dev/docs/modeling/agents/task-based-authorization
-- OpenFGA — MCP Authorization  
-  https://openfga.dev/docs/modeling/agents/mcp-authorization
-- OpenFGA — AI Agent Authorization  
-  https://openfga.dev/docs/use-cases/ai-agent-authorization
+Production commonly combines a shared gateway with service-side enforcement. The gateway cannot safely grant authority the target service never checks.
 
-## MCP
-- Model Context Protocol  
-  https://modelcontextprotocol.io/
+## 14. Technology landscape and common libraries
+
+| Technology | Role | Strengths | Limitations / cautions |
+| --- | --- | --- | --- |
+| Pydantic | Python input/output contracts and JSON Schema | typed validation, mature ecosystem, readable models | schema-valid is not authorized; strict mode must be chosen |
+| JSON Schema 2020-12 | portable contract format | interoperable tool schemas | `$ref`, formats, coercion, and implementation differences need tests |
+| MCP 2026-07-28 + official SDKs | discovery/call protocol for tools/resources | standard contracts, schemas, authorization profile, Tier 1 SDKs | protocol is not business authorization; annotations are untrusted hints |
+| OPA/Rego or Cedar | contextual policy decision | centralized/versioned policy | still needs PEP coverage, trusted attributes, result handling |
+| OpenFGA | task/tool/resource relationships | check/list queries and agent/MCP modeling | amount/argument rules may require conditions or composition |
+| OAuth/token exchange/workload federation | downstream credential authority | short-lived audience/scope restriction | tokens can still be stolen/misused; never expose to model |
+| sandbox + network policy | hard runtime containment | constrains process/filesystem/egress | does not replace business authorization |
+
+### MCP mapping
+
+`mcp_tool_definitions()` emits only authorized tools and includes Pydantic-generated `inputSchema` and `outputSchema`. It also emits cautious `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` values.
+
+MCP states that annotations are hints and must be treated as untrusted unless they come from a trusted server. They can inform UI or preflight risk decisions; they cannot enforce filesystem, network, approval, or business policy.
+
+The official Python SDK can host the same tool definitions and handlers, but the SDK registration decorator is not the authorization boundary. Route every call through the same gateway contract or an equivalent resource-side PEP.
+
+## 15. State of the art as of September 2026
+
+### Established practice
+
+- minimize tools and downstream IAM scopes;
+- validate all inputs at the resource boundary;
+- re-authorize on every call;
+- isolate secrets from prompts and results;
+- require human confirmation for sensitive effects;
+- enforce rate limits/timeouts and log tool usage; and
+- validate/sanitize outputs before model reuse.
+
+### Current protocol practice
+
+MCP 2026-07-28 uses JSON Schema 2020-12 by default for tool schemas, supports output schemas, permits authorization-filtered tool lists, adds deterministic/cacheable discovery, and continues OAuth hardening. Tool names/methods can be surfaced in headers for gateway routing and metering. Per-request business authorization still belongs to the application.
+
+OpenFGA now publishes agent and MCP authorization models covering public tools, roles/groups, temporal access, and resource permissions. These patterns are useful when task/tool/resource relationships are the hard part.
+
+OWASP's 2026 Agentic Top 10 highlights misuse of legitimate tools and recommends per-tool least-privilege profiles including scope, rates, egress allowlists, minimal CRUD, approval, sandboxing, and monitoring. Treat this as risk guidance; verify concrete controls against the relevant protocol and platform documentation.
+
+### Emerging work
+
+MCP proposals are exploring structured authorization denials, asynchronous approval, signed execution records, stronger capability declarations, and tamper-evident audit contracts. These are promising but not all are final. Pin the exact accepted specification/extension version before production use.
+
+### Open problems
+
+- portable task-scoped authority across tools and organizations;
+- end-to-end receipts that survive gateways and asynchronous execution;
+- safe discovery caching under revocation;
+- composition analysis for individually permitted tool chains;
+- output/instruction separation across heterogeneous content;
+- usable approval that resists fatigue while binding exact effects; and
+- policy evaluation that is low latency without accepting stale authority.
+
+NIST's February 2026 agent identity/authorization concept paper is an initial public draft, not a final standard. It frames identification, authorization, audit/non-repudiation, and prompt-injection controls as areas for applied standards work.
 
 ---
+
+## 16. Worked travel trace
+
+### Valid search
+
+1. Middleware supplies Alice, travel agent, approved production workload, and North tenant.
+2. The model proposes `search_flights` with YVR, YYZ, and a maximum price.
+3. The gateway validates the active task and allowed tool.
+4. Pydantic rejects extra/wrong fields; policy rejects identical airports.
+5. The gateway checks fixed search egress and a per-task call budget.
+6. A read-only credential lease is injected internally.
+7. The service result is validated before flight IDs enter model context.
+
+### Approved booking
+
+1. The proposal identifies `trip:north:483`, AC101, and CAD 700.
+2. The gateway resolves authoritative trip owner/tenant/state and task resource scope.
+3. It checks airline and amount constraints.
+4. Without approval it returns `APPROVAL_REQUIRED` and creates no effect.
+5. A manager receipt binds the exact operation and digest.
+6. The gateway consumes approval and budget inside its execution boundary and injects the lease only into the downstream client.
+7. It validates the booking response and returns an execution receipt.
+
+### Lost response
+
+The simulator commits the booking but loses the first response. The gateway returns `UNKNOWN`. The retry reuses the same operation ID and digest, finds the stored effect, validates it, and returns the original receipt without another booking or approval consumption.
+
+## 17. Hands-on lab
+
+Artifacts:
+
+- [guided notebook](least_privilege_tool_access.ipynb)
+- [reusable implementation](lab.py)
+- [focused invariant tests](tests/test_course05_tool_gateway.py)
+
+From the repository root:
+
+```bash
+uv sync
+uv run python curriculum/beginner/05-least-privilege-tool-access/lab.py
+uv run pytest -q curriculum/beginner/05-least-privilege-tool-access/tests
+```
+
+The default path uses Pydantic plus the Python standard library and performs no external calls. Optional production exercises can use the official MCP Python SDK, OpenFGA SDK, OPA client, or cloud credential APIs while preserving the same gateway invariants.
+
+### Lab components
+
+| Component | Responsibility |
+| --- | --- |
+| `ToolRequest` | model-proposed tool and arguments; contains no identity/credential fields |
+| `VerifiedContext` | authenticated requester/actor/workload/tenant |
+| `ToolSpec` + Pydantic models | governed catalog and strict schemas |
+| `TaskGrant` | tool, resource, argument, egress, budget, and lifetime scope |
+| `UnsafeDispatcher` | intentionally unsafe baseline |
+| `ToolGateway` | trusted discovery, authorization, execution, validation, evidence |
+| `CredentialBroker` | opaque short-lived lease metadata |
+| `ApprovalStore` / `BudgetStore` | concurrency-safe teaching stores |
+| `TravelServiceSimulator` | deterministic effects and idempotency ledger |
+| `mcp_tool_definitions()` | authorized MCP-compatible schema mapping |
+
+## 18. Experiments and evaluation
+
+The dataset contains 20 scenarios and 24 attempts:
+
+- six expected terminal successes;
+- seventeen expected denials or approval challenges; and
+- one expected unknown outcome followed by successful reconciliation.
+
+It covers valid reads/writes, approval, workload/resource boundaries, hidden-tool calls, price/airline/recipient policy, argument injection, lifecycle, budgets, malformed output, policy outage, uncertain execution, and idempotency conflict.
+
+Metrics:
+
+\[
+terminal\ success\ rate = \frac{expected\ terminal\ successes\ reached}{expected\ terminal\ successes}
+\]
+
+\[
+invalid\ dispatch\ rate = \frac{blocked/challenged\ attempts\ dispatched}{blocked/challenged\ attempts}
+\]
+
+\[
+forbidden\ effect\ rate = \frac{blocked/challenged\ attempts\ causing\ a\ new\ write}{blocked/challenged\ attempts}
+\]
+
+| System | Outcome match | Terminal success | Invalid dispatch | Forbidden effect | Duplicate effect | Evidence complete |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| unrestricted dispatcher | 6/24 | 6/6 | 17/17 | 8/17 | 0/24 | 24/24 |
+| hardened gateway | 24/24 | 6/6 | 0/17 | 0/17 | 0/24 | 24/24 |
+
+The baseline's forbidden-effect rate is lower than its invalid-dispatch rate because some invalid calls are reads. Dispatching an unauthorized read is still a violation even when the simulator records no write.
+
+### Release gate
+
+The deterministic gate requires:
+
+```text
+outcome match == 100%
+terminal success == 100%
+invalid dispatch == 0%
+forbidden effects == 0%
+duplicate effects == 0%
+evidence completeness == 100%
+```
+
+Production evaluation should additionally slice by tool/effect/risk/tenant, track valid work blocked, measure p50/p95/p99 gateway and tool latency, approval wait time, credential issuance failures, stale discovery, budget exhaustion, reconciliation rate, output-schema failures, cost per successful compliant task, and policy/catalog rollout errors.
+
+## 19. Failure modes and mitigations
+
+| Failure | Consequence | Control and proof |
+| --- | --- | --- |
+| expose every tool | larger prompt and attack surface | authorization-filtered discovery; hidden-tool direct-call test |
+| rely on discovery only | endpoint bypass or stale cache | execution-time re-authorization |
+| accept identity in arguments | model substitutes authority | separate `VerifiedContext` contract |
+| schema equals authorization | valid cross-tenant or excessive values pass | authoritative resource and argument policy |
+| ignore extra fields | caller adds URL/path/flags | strict `extra="forbid"` schema |
+| generic shell/HTTP/SQL | unbounded capability | narrow business tools; sandbox generic primitives |
+| long-lived broad credential | compromise blast radius | brokered audience/scope/operation-bound lease |
+| credential in prompt/result | secret disclosure | inject only inside downstream client; evidence metadata only |
+| approval Boolean/chat text | alteration and replay | exact expiring single-use receipt |
+| caller-selected egress | exfiltration/SSRF | fixed catalog host plus network allowlist |
+| unlimited calls/chains | cost, spam, cascading effects | per-tool/task/chain/retry/deadline budgets |
+| retry with new operation ID | duplicate side effect | stable ID, digest, reconcile before retry |
+| trust successful status | fabricated/malformed success | output schema and authoritative receipt |
+| tool text treated as instruction | indirect prompt injection | keep result data typed/untrusted; minimize context |
+| policy outage fails open | unavailable PDP becomes bypass | deny consequential dispatch and record reason |
+| log raw args/tokens/results | audit system becomes data leak | IDs/digests, redaction, retention and access control |
+
+## 20. Production upgrade path
+
+| Teaching lab | Production upgrade |
+| --- | --- |
+| local catalog | signed/versioned registry with ownership, review, rollout, revocation |
+| Pydantic only | Pydantic + cross-language JSON Schema contract tests |
+| in-process PEP | gateway plus resource-side enforcement |
+| in-memory task grant | durable task authorization or relationship/policy engine |
+| synthetic lease | workload federation/token exchange/secret broker with PoP where appropriate |
+| in-memory approval | durable state machine and atomic effect coordination |
+| local call counter | distributed atomic rate/cost/deadline budget |
+| fixed egress set | proxy/service-mesh/firewall/sandbox enforcement and DNS controls |
+| simulator ledger | downstream idempotency API, reconciliation, outbox/workflow |
+| local audit list | privacy-filtered append-only telemetry with policy/catalog versions |
+
+### Operational checklist
+
+- Who owns each tool and approves catalog/risk changes?
+- Can a catalog update expand authority without task re-authorization?
+- How quickly do task cancellation and credential revocation propagate?
+- Are discovery caches scoped to the authenticated request and version?
+- Does every write use a stable operation ID and produce a receipt?
+- Which failures are retryable, and how are unknown outcomes reconciled?
+- Are downstream services enforcing tenant/resource authority too?
+- Can tool results introduce instructions, links, files, or resources into context?
+- Are secrets and sensitive arguments excluded from traces and model-visible errors?
+- Can operators roll back policy/catalog versions independently?
+
+## 21. Exercises
+
+### Implementation
+
+1. Add a read-only `get_trip` tool with exact subject/tenant filtering and output validation.
+2. Add a two-person approval state machine for cancellation.
+3. Add a total task-spend budget alongside per-booking and per-tool limits.
+4. Expose the catalog through the official MCP Python SDK while routing every call through `ToolGateway`.
+
+### Diagnosis
+
+5. Change Pydantic to ignore extra fields. Show how `callback_url` becomes invisible to policy review.
+6. Remove reconciliation and retry the unknown booking with a new operation ID. Measure duplicate effects.
+7. Trust a malicious `readOnlyHint` from an untrusted server and explain which hard controls remain necessary.
+
+### Architecture judgment
+
+8. Choose between a narrow booking capability and a sandboxed browser for a new airline without an API. Compare blast radius, reliability, observability, and maintenance.
+9. Design a distributed transaction or workflow for approval consumption, budget reservation, booking, and receipt persistence.
+10. Model task/tool/trip relationships in OpenFGA and keep price/recipient policy in OPA or Cedar. Explain why the composition is worth its operational cost.
+
+## 22. Review questions
+
+1. Why must an invocation be authorized even when the tool was absent from discovery?
+2. What does strict schema validation prove—and what does it not prove?
+3. Why should an MCP tool annotation not be treated as an enforcement guarantee?
+4. Which identifiers remain stable across an uncertain retry?
+5. What is the difference between an allow decision and an execution receipt?
+6. How do credential audience/scope and gateway policy provide defense in depth?
+7. Why can two individually permitted tools form a forbidden chain?
+
+## 23. Key takeaways
+
+1. Tools turn proposals into effects, so the tool gateway is a security boundary.
+2. Minimize discovery, then independently authorize execution.
+3. Identity, task, resource, arguments, approval, credential, egress, and budget remain separate controls.
+4. Strict schemas reject ambiguity; policy rejects unauthorized valid values.
+5. Narrow business capabilities are safer and easier to evaluate than god tools.
+6. Credentials stay behind the gateway and are narrower than the service's total authority.
+7. Approval binds one exact operation; retries reconcile the same operation.
+8. Tool results are untrusted until their schema and business receipt are verified.
+9. Measure dispatches and real effects—not only returned status strings.
+10. Protocols and SDKs carry contracts; application policy and enforcement provide authority.
+
+---
+
+## References
+
+### Standards and current protocol documentation
+
+- Model Context Protocol, [2026-07-28 tools specification](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
+- Model Context Protocol, [2026-07-28 authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization).
+- Model Context Protocol, [security best practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices).
+- Model Context Protocol, [2026-07-28 specification release notes](https://blog.modelcontextprotocol.io/posts/2026-07-28/).
+- Model Context Protocol, [official Python SDK](https://github.com/modelcontextprotocol/python-sdk).
+- Pydantic, [strict mode](https://docs.pydantic.dev/latest/concepts/strict_mode/) and [JSON Schema generation](https://docs.pydantic.dev/latest/concepts/json_schema/).
+- JSON Schema, [Draft 2020-12 specification](https://json-schema.org/draft/2020-12).
+
+### Authorization and agent/tool security
+
+- OpenFGA, [Authorization for MCP Servers](https://openfga.dev/docs/modeling/agents/mcp-authorization).
+- OpenFGA, [Task-Based Authorization](https://openfga.dev/docs/modeling/agents/task-based-authorization).
+- OWASP GenAI Security Project, [Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/).
+- OWASP Cheat Sheet Series, [AI Agent Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html).
+- NIST NCCoE, [Accelerating the Adoption of Software and AI Agent Identity and Authorization](https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd), initial public draft, February 2026.
+- NIST, [IR 8587: Protecting Tokens and Assertions from Forgery, Theft, and Misuse](https://csrc.nist.gov/pubs/ir/8587/final), September 2026.
 
 ## Next course
 
-**Beginner 06 — Agent Identity Lifecycle**
-
-Next we move from runtime access to lifecycle governance: registration, ownership, provisioning, activation, deployment binding, credential rotation, change management, suspension, revocation, recertification, offboarding, and evidence across the lifetime of an enterprise agent.
+[Beginner 06 — Agent Identity Lifecycle](../06-agent-identity-lifecycle/README.md) extends these runtime controls across registration, ownership, provisioning, activation, rotation, recertification, suspension, revocation, and retirement.
