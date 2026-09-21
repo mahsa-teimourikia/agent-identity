@@ -1,3 +1,5 @@
+"""Course 02 invariant tests for multi-hop identity provenance."""
+
 from dataclasses import replace
 import importlib.util
 from pathlib import Path
