@@ -4,12 +4,22 @@ on:
   push:
     paths:
       - 'curriculum/**/*.ipynb'
+      - 'curriculum/**/*.py'
+      - 'hub/**'
+      - 'quiz/**'
+      - 'scripts/generate_hub_data.py'
+      - 'scripts/custom_questions.py'
       - 'scripts/validate_notebooks.py'
       - 'pyproject.toml'
       - 'uv.lock'
   pull_request:
     paths:
       - 'curriculum/**/*.ipynb'
+      - 'curriculum/**/*.py'
+      - 'hub/**'
+      - 'quiz/**'
+      - 'scripts/generate_hub_data.py'
+      - 'scripts/custom_questions.py'
       - 'scripts/validate_notebooks.py'
       - 'pyproject.toml'
       - 'uv.lock'
@@ -29,3 +39,5 @@ jobs:
         run: uv sync
       - name: Validate Notebooks
         run: uv run python scripts/validate_notebooks.py
+      - name: Test Course Labs
+        run: uv run pytest curriculum/beginner/01-agent-identity-foundations/tests -q
