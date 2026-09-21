@@ -1,7 +1,5 @@
 # Beginner 02 — Humans, Workloads and Agents
 
-![Humans, Workloads and Agents](images/humans-workloads-agents.png)
-
 > **Goal:** learn to model the different identities participating in an agentic system instead of collapsing a user, application, logical agent, runtime workload, tool, and resource into one security principal.
 
 The first course established that agent identity, authentication, authorization, and delegation are different concerns. This chapter goes deeper into **what exactly receives an identity**.
@@ -24,6 +22,20 @@ You will be able to:
 - preserve identity context through multi-hop calls;
 - recognize shared-account, credential-reuse, environment-confusion, and attribution anti-patterns;
 - design an agent identity registry.
+
+## Prerequisites, success criteria, and non-goals
+
+Complete [Course 01 — Agent Identity Foundations](../01-agent-identity-foundations/README.md) first. You need basic Python and API concepts; the lab requires no account, cluster, credential, or network access.
+
+The practical work succeeds when:
+
+- one valid employee → travel planner → booking specialist request remains available;
+- nine identity-collision, environment, lifecycle, tenant, chain, and task-substitution cases fail closed;
+- unauthorized success falls from `9/9` in the shared-platform baseline to `0/9` in the provenance-bound control;
+- the valid decision preserves the human, application, logical-agent chain, workload, deployment binding, and delegation edges; and
+- denials distinguish presented names from identities that were actually validated.
+
+This course does not verify JWTs, operate SPIRE, configure cloud federation, or implement a production authorization engine. Course 03 adds credential verification; later courses add workload identity and policy systems. Here, `IdentityEvidence` is the sanitized result of an authenticator so the learner can concentrate on identity classes and relationships.
 
 ---
 
@@ -718,118 +730,192 @@ The systems may be separate products. The important point is preserving the rela
 
 ---
 
-# 20. State of the art and tooling
+# 20. State of the art and common tooling (September 2026)
 
-## SPIFFE / SPIRE
+The market is converging on separate human/workforce, application, workload, and agent control-plane identities. The exact product vocabulary is not portable, so architecture diagrams and audit schemas should use explicit roles rather than vendor nouns.
 
-SPIFFE defines workload identity standards. SPIRE implements SPIFFE and performs node/workload attestation before issuing identities.
+## Established practice
 
-Use it when you need portable workload identity across heterogeneous infrastructure.
+| Technology | Identity it establishes | What it does well | What it does not establish |
+| --- | --- | --- | --- |
+| Workforce IdP + OIDC | interactive human/session | assurance, lifecycle, groups, consent | runtime workload or agent authority |
+| OAuth client registration | application/client | redirect, client authentication, grant policy | which logical agent ran inside the client |
+| Kubernetes ServiceAccount projected token | pod-associated Kubernetes principal | bounded, rotating token mounted for a pod | portable cross-system identity by itself |
+| AWS roles / EKS Pod Identity, Azure managed identity, Google Workload Identity Federation | cloud or federated workload principal | removes many static keys; integrates with cloud IAM | human requester, agent chain, business delegation |
+| SPIFFE/SPIRE | attested workload identity and trust domain | portable SVID issuance, rotation, federation, mTLS/JWT profiles | application-level authorization or logical-agent governance |
+| Agent inventory / registry | governed logical agent | owner, purpose, risk, status, approved deployment | cryptographic runtime authentication |
+| OPA, Cedar, OpenFGA | policy or relationship decision | resource/action policy and graph relationships | trustworthy inputs or workload attestation |
 
-## Kubernetes ServiceAccounts
+The current Kubernetes bound service-account-token mechanism binds a projected token to a Pod and audience; it should not be treated like the older indefinitely reusable secret-token model ([Kubernetes administration guide](https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/)). Google’s current guidance similarly distinguishes Kubernetes ServiceAccounts from IAM service accounts and recommends workload federation rather than key files ([GKE workload identity](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity)).
 
-Kubernetes ServiceAccounts provide workload-oriented identities inside Kubernetes and can participate in projected token and federation patterns.
+## Emerging agent-specific practice
 
-Do not confuse a Kubernetes ServiceAccount name with a complete cross-system identity architecture.
+- NIST’s 2026 software/AI-agent identity work explicitly connects identification, authorization, auditing, non-repudiation, and prompt-injection controls. It is an active applied-security initiative, not a final universal agent identity standard ([NIST concept paper announcement](https://www.nist.gov/news-events/news/2026/02/new-concept-paper-identity-and-authority-software-agents)).
+- Cloud identity platforms are adding agent-specific identity and lifecycle constructs. Use them where helpful, but document how each maps to requester, actor, workload, owner, and resource because provider semantics differ.
+- OpenFGA models agents as principals and supports task-scoped relationships, expiration, call limits, agent binding, and narrower sub-agent tasks ([OpenFGA agent modeling](https://openfga.dev/docs/modeling/agents)). Those are authorization relationships, not proof that a running process is that agent.
+- SPIFFE’s stable Workload API describes X.509-SVID, JWT-SVID, and WIT-SVID profiles; the API implementation identifies the local caller out of band before returning entitled identity material ([SPIFFE Workload API](https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/)).
 
-## Cloud workload identity
+## Standards frontier
 
-Major clouds provide secret-reducing workload identity patterns:
+The IETF WIMSE working group is developing workload identifiers, credentials, mTLS, HTTP signatures, proof tokens, operational practice, and an architecture for identity across systems. The July 2026 architecture remains an active Internet-Draft rather than an RFC ([WIMSE architecture](https://datatracker.ietf.org/doc/html/draft-ietf-wimse-arch)). Execution-context and AI-agent-specific proposals are frontier work; production designs should not describe drafts as settled interoperability guarantees.
 
-- AWS IAM roles for workloads, including roles for EC2/ECS/Lambda and IRSA-style Kubernetes integrations;
-- Microsoft Entra managed identities and workload identity federation;
-- Google Cloud service accounts and Workload Identity Federation.
-
-The common architectural direction is **platform identity + federation + short-lived credentials**, rather than embedded static secrets.
-
-## IETF WIMSE
-
-The IETF Workload Identity in Multi System Environments work is developing architecture and practices for workload identity across systems. It is highly relevant to agents because agents are ultimately software workloads crossing trust boundaries.
-
----
-
-# 21. Practical notebook
-
-The notebook builds a small identity registry and demonstrates:
-
-1. multiple identity classes;
-2. owner relationships;
-3. logical-agent-to-workload mappings;
-4. environment isolation;
-5. identity propagation;
-6. immediate caller versus business actor;
-7. multi-agent delegation;
-8. shared-service-account attribution failure;
-9. lifecycle/revocation behavior;
-10. audit records.
+Portable logical-agent identity, instance-level identity, cross-organization delegation, trustworthy execution evidence, and consistent requester/actor propagation remain integration problems. An agent card, model name, prompt role, framework session, service-account name, or registry row may add context; none alone proves the full path.
 
 ---
 
-# 22. Design review checklist
+# 21. Worked travel-booking trace
+
+The lab’s valid path has six distinct security identities:
+
+```text
+requester     user:alice
+application   client:travel-portal
+parent actor  agent:travel-planner
+current actor agent:booking-specialist
+workload      spiffe://corp.example/prod/booking-specialist
+resource      trip:483
+```
+
+The resource-side gate validates two separate delegation edges:
+
+```text
+user:alice → agent:travel-planner → agent:booking-specialist
+             task trip:483          booking:create on trip:483
+```
+
+It also requires the application, current actor, workload, production environment, and deployment version to match one approved binding. A corporate workload credential alone is insufficient.
+
+The public record distinguishes presented from validated fields. If a research workload claims to be the booking specialist, the denial can retain the evidence and presented label for investigation without asserting that the booking identity was authenticated.
+
+# 22. Practical lab
+
+The canonical implementation is [`lab.py`](lab.py). From the repository root:
+
+```bash
+python3 curriculum/beginner/02-humans-workloads-agents/lab.py
+uv run pytest curriculum/beginner/02-humans-workloads-agents/tests -q
+```
+
+Use the [guided notebook](humans_workloads_agents.ipynb) for the baseline → identity graph → controlled trace → experiments → evaluation → failure-injection sequence.
+
+| Case | Changed identity fact | Expected | Boundary exercised |
+| --- | --- | --- | --- |
+| Valid multi-hop booking | none | allow | all identities and edges agree |
+| Spoofed logical agent | authenticated workload | deny | label cannot override runtime |
+| Development runtime | environment | deny | dev cannot inherit production identity |
+| Application collision | OAuth/application client | deny | client is part of deployment provenance |
+| Unknown requester | human principal | deny | prompt subject is not a directory identity |
+| Cross-tenant context | propagated tenant | deny | all authorities must agree |
+| Missing parent actor | actor relationship | deny | sub-agent cannot erase its parent |
+| Cyclic actor chain | chain topology | deny | no repeated or unbounded actors |
+| Task substitution | delegated task | deny | authority is task/resource bound |
+| Disabled workload | lifecycle | deny | runtime revocation is independent |
+
+# 23. Evaluation
+
+The lab evaluates the same labelled cases against two designs:
+
+- **collapsed baseline:** any corporate workload becomes `service-account:agents-prod`;
+- **provenance-bound gate:** validates every identity class, approved deployment, chain edge, tenant, task, and resource.
+
+```text
+valid_task_success_rate = allowed valid cases / valid cases
+unauthorized_success_rate = allowed invalid cases / invalid cases
+invalid_block_rate = denied invalid cases / invalid cases
+valid_provenance_completeness_rate = complete valid decisions / valid cases
+invalid_identity_collision_rate = invalid allows using a valid audit principal / invalid cases
+```
+
+| Metric | Better | Baseline | Controlled |
+| --- | --- | ---: | ---: |
+| Valid task success | higher | `1/1` | `1/1` |
+| Unauthorized success | lower | `9/9` | `0/9` |
+| Invalid block rate | higher | `0/9` | `9/9` |
+| Valid provenance completeness | higher | `0/1` | `1/1` |
+| Invalid identity collision | lower | `9/9` | `0/9` |
+
+These figures prove only the fixture’s invariants. A production evaluation should add credential/key rotation, registry and directory staleness, partial dependency failure, duplicate/replayed envelopes, concurrent lifecycle change, tenant/risk slices, latency percentiles, and false-denial investigation.
+
+# 24. Failure modes and production upgrades
+
+| Failure | Consequence | Upgrade |
+| --- | --- | --- |
+| Shared platform/service account | actions collide in audit and policy | distinct workload identity plus logical-agent binding |
+| Prompt-provided requester or actor | forged provenance | derive from authenticated session and governed mappings |
+| Same identity in dev and prod | lower-trust runtime gains production standing | environment-specific principals/trust domains |
+| Blind token forwarding | downstream sees impersonated user or excessive rights | per-hop authentication and attenuated token exchange |
+| Unsigned propagation headers | caller rewrites identity chain | trusted hop, signed envelope, or tokenized actor context |
+| Unbounded actor list | cycles, chain confusion, denial of service | canonical order, maximum depth, duplicate detection |
+| Owner treated as actor | governance relationship becomes runtime permission | separate owner/sponsor, requester, actor, and workload fields |
+| Registry outage fails open | unknown deployment gains identity | fail closed for effects; narrowly govern cached/read-only paths |
+| Raw credentials in audit | replay and privacy exposure | log stable IDs, evidence references, versions, and reason codes |
+
+Production systems also need an identity namespace policy, immutable subject mappings, ownership transfer, joiner/mover/leaver events, deployment admission, versioned bindings, rapid workload disablement, cache invalidation, correlation across hops, privacy retention, and incident runbooks.
+
+# 25. Design review checklist
 
 For every enterprise agent ask:
 
-- What is the human/requester identity?
-- What is the logical agent identity?
-- What workload identity executes it?
-- Is the workload identity environment-specific?
-- What application/OAuth client identity exists?
-- Which tools/services have identities?
-- How are resources named?
-- Who owns the agent?
-- How is owner different from actor?
-- How is user-to-agent delegation represented?
-- How is agent-to-agent delegation represented?
-- How is a workload mapped to an approved logical agent?
-- Can one agent be disabled independently?
-- Can one deployment environment be disabled independently?
-- Are upstream identities preserved without unsafe token forwarding?
-- Can audit records distinguish immediate caller, actor, and requester?
+- Which principal initiated business intent, and how was the human session authenticated?
+- Which application/client received it, and can several agents share that client?
+- Which logical agent is the current actor, and who owns or sponsors it?
+- Which exact workload and environment executed it, and what attested that mapping?
+- Which parent actors and delegation edges explain the current actor’s authority?
+- Which service was the immediate authenticated peer, and which service is the intended audience?
+- Which authoritative system owns tenant and resource identity?
+- Can the resource reject a missing, reordered, duplicated, or overlong actor chain?
+- Can one agent, deployment, credential, owner, or environment be disabled independently?
+- Can audit records distinguish presented values from validated identities without storing secrets?
 
----
+# 26. Exercises
 
-# 23. Key takeaways
+1. Add a second valid direct path in which the travel planner reads an itinerary without invoking the booking specialist. Define its correct parent and chain.
+2. Add a maximum delegation depth of one and explain whether the valid booking path counts one or two delegations.
+3. Replace the development workload with a staging workload and decide whether environment is encoded in the identifier, registry, evidence, or all three.
+4. Simulate a registry binding update during a request. Define whether the resource uses snapshot, version, or latest-state semantics.
+5. Design a signed propagation envelope. Name its issuer, audience, replay key, lifetime, and which fields must never be caller-controlled.
+6. Map the lab identities to Kubernetes + SPIRE, AWS EKS Pod Identity, Azure managed identity, or GKE Workload Identity Federation. Identify what each platform still cannot express.
 
-1. A business action can contain several legitimate identities.
-2. A human, OAuth client, logical agent, workload, tool, and resource represent different security concepts.
-3. Ownership and delegation are relationships, not identity equality.
-4. Logical agent identity gives agent-level governance; workload identity proves which software is executing.
-5. Workload identity should favor attestation and short-lived credentials.
-6. Identity mappings must be explicit and trusted.
-7. Preserve requester and actor context across hops without blindly forwarding credentials.
-8. Multi-agent systems require stronger, not weaker, identity separation.
-9. Environment-specific identity reduces blast radius.
-10. Identity lifecycle must match the thing being identified.
+# 27. Checkpoint
 
----
+The booking API authenticates `spiffe://corp.example/prod/research-assistant`, while the request envelope claims `agent:booking-specialist` and names a valid employee. What should it do?
+
+- A. Allow because both workloads are in the corporate trust domain.
+- B. Allow because the employee is valid.
+- C. Deny because the authenticated workload is not the approved deployment for the claimed current actor and application.
+
+**Answer: C.** Authentication of a corporate workload is useful evidence, but the resource must also validate the logical-agent/workload/application binding and delegation path.
+
+# 28. Key takeaways
+
+1. Human, application, logical-agent, workload, service, and resource identities answer different questions.
+2. Ownership, sponsorship, deployment, and delegation are relationships—not identity equality.
+3. Logical-agent identity supports governance; workload identity proves which software is running.
+4. The immediate peer, business requester, and current actor can all differ legitimately.
+5. Multi-agent chains require canonical order, bounded depth, task binding, and independent actors.
+6. Environment and lifecycle are security facts; dev, prod, active, and disabled are not interchangeable.
+7. Preserve identity provenance through trusted context without forwarding broad credentials blindly.
+8. A model proposes identity-labelled actions; trusted systems establish and validate identities.
 
 # References
 
-### Workload identity
-- SPIFFE overview: https://spiffe.io/docs/latest/spiffe-about/overview/
-- SPIFFE concepts: https://spiffe.io/docs/latest/spiffe-about/spiffe-concepts/
-- SPIFFE Workload API: https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/
-- SPIRE concepts: https://spiffe.io/docs/latest/spire-about/spire-concepts/
+## Standards and primary guidance
 
-### Standards
-- OAuth 2.0 — RFC 6749: https://datatracker.ietf.org/doc/html/rfc6749
-- OAuth Token Exchange — RFC 8693: https://datatracker.ietf.org/doc/html/rfc8693
-- IETF WIMSE working group: https://datatracker.ietf.org/wg/wimse/about/
+- NIST NCCoE, [Software and AI Agent Identity and Authorization concept paper](https://www.nccoe.nist.gov/sites/default/files/2026-02/accelerating-the-adoption-of-software-and-ai-agent-identity-and-authorization-concept-paper.pdf), 2026.
+- NIST SP 800-207, [Zero Trust Architecture](https://csrc.nist.gov/pubs/sp/800/207/final).
+- SPIFFE, [SPIFFE standard](https://spiffe.io/docs/latest/spiffe-specs/), [SPIFFE ID](https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/), and [Workload API](https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/).
+- SPIRE, [workload registration and attestation](https://spiffe.io/docs/latest/spire-about/spire-concepts/).
+- IETF, [OAuth 2.0 Token Exchange, RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html).
+- IETF WIMSE, [Workload Identity in a Multi System Environment Architecture](https://datatracker.ietf.org/doc/html/draft-ietf-wimse-arch), active Internet-Draft.
 
-### Platform identity
-- Kubernetes Service Accounts: https://kubernetes.io/docs/concepts/security/service-accounts/
-- Microsoft Entra workload identities: https://learn.microsoft.com/en-us/entra/workload-id/
-- AWS IAM roles: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html
-- Google Workload Identity Federation: https://cloud.google.com/iam/docs/workload-identity-federation
+## Official implementation guidance
 
-### Agent identity
-- NIST NCCoE agent identity concept paper: https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd
-- OpenFGA agent authorization: https://openfga.dev/docs/use-cases/ai-agent-authorization
-
----
+- Kubernetes, [Service Accounts](https://kubernetes.io/docs/concepts/security/service-accounts/) and [ServiceAccount token administration](https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/).
+- AWS, [workload access from EKS](https://docs.aws.amazon.com/eks/latest/userguide/service-accounts.html).
+- Microsoft, [Entra workload identities](https://learn.microsoft.com/en-us/entra/workload-id/workload-identities-overview).
+- Google Cloud, [identities for workloads](https://cloud.google.com/iam/docs/workload-identities) and [Workload Identity Federation best practices](https://cloud.google.com/iam/docs/best-practices-for-using-workload-identity-federation).
+- OpenFGA, [authorization modeling for agents](https://openfga.dev/docs/modeling/agents).
 
 ## Next course
 
-**Beginner 03 — Authentication, Credentials and Tokens**
-
-We next move from *what receives an identity* to *how a principal proves it*: keys, secrets, certificates, JWT/JWS/JWK, bearer versus proof-of-possession credentials, credential validation, expiry, rotation, and the foundations needed before OAuth.
+Continue to [Beginner 03 — Authentication, Credentials and Tokens](../03-authentication-credentials-tokens/README.md) to move from *what receives an identity* to *how a principal proves it*: keys, certificates, JWT/JWS/JWK, bearer versus sender-constrained credentials, validation, expiry, and rotation.

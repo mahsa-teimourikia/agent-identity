@@ -39,5 +39,12 @@ jobs:
         run: uv sync
       - name: Validate Notebooks
         run: uv run python scripts/validate_notebooks.py
-      - name: Test Course Labs
-        run: uv run pytest curriculum/beginner/01-agent-identity-foundations/tests -q
+      - name: Test Reusable Course Labs
+        shell: bash
+        run: |
+          for lab in curriculum/*/*/lab.py; do
+            tests="$(dirname "$lab")/tests"
+            if [[ -d "$tests" ]]; then
+              uv run pytest "$tests" -q
+            fi
+          done
