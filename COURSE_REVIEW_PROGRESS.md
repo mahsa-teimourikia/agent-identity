@@ -8,7 +8,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | --- | --- | --- |
 | Beginner 01 — Agent Identity Foundations | Deep pass complete | Evidence-bound identity, delegation, failure cases, measurable evaluation |
 | Beginner 02 — Humans, Workloads and Agents | Deep pass complete | Principal taxonomy, multi-hop provenance, deployment and delegation relationships |
-| Beginner 03 — Authentication, Credentials and Tokens | Next | Verification, key selection, replay resistance, rotation, sender constraints |
+| Beginner 03 — Authentication, Credentials and Tokens | Deep pass complete | Token profiles, issuer-bound key selection, rotation, replay, observable decisions |
+| Beginner 04 — Authorization for Agents | Next | Default deny, policy models, delegated scope, PEP/PDP enforcement |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -46,6 +47,25 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed notebook covering taxonomy, relationship inspection, baseline, controlled trace, evaluation, reordered-chain failure injection, lifecycle failure, and production mapping.
 - Learning Hub checkpoint asks for a resource-side judgment when the authenticated workload and claimed agent disagree.
 - State-of-the-art review distinguishes established platform/workload mechanisms, emerging agent identity practice, and active IETF drafts.
+
+## Beginner 03 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| A valid signature is necessary but not sufficient | README verification model and notebook baseline | `signature_only_baseline` compared with `hardened_verifier` | Baseline accepts `12/14` invalid attempts; control accepts `0/14` |
+| Key IDs select only among issuer-bound trusted keys | README key/JWKS and SSRF guidance | bounded `kid`, local `TrustedKeySet`, forbidden `jku`/`x5u` | Unknown/revoked-key tests and notebook key-reference failure injection |
+| Token types and validation rules must be mutually exclusive | README cross-JWT confusion guidance | exact `agent-action+jwt` profile | Missing/wrong type tests |
+| Time and lifecycle checks are independent | README claims, rotation, and production sections | fixed-clock `iat`/`nbf`/`exp`, maximum lifetime, active/retiring/revoked states | Expired, future, lifetime, active, retiring, and revoked fixtures |
+| Replay semantics depend on credential purpose | README bearer/sender-constraint/single-use distinction | atomic-style `(issuer, jti)` consumption for the action assertion | First use accepted; second use denied with `replay_detected` |
+| Verification evidence must not leak credentials | README logging boundary and notebook evidence inspection | token digest and typed public decision without raw token | Decision-record test |
+
+## Beginner 03 — validation record
+
+- Sixteen deterministic token cases producing seventeen attempts: three expected-valid and fourteen expected-invalid.
+- Eleven focused tests for reproducibility, public JWK safety, issuer-bound key trust/lifecycle, issuer/audience/type, time, tampering, replay, logging, and metric populations.
+- Lab-backed notebook covering profile and JWK inspection, a real signature-only baseline, hardened verification, rotation, replay, evaluation, malicious key references, and production mapping.
+- Learning Hub checkpoint tests trust-anchor judgment rather than JWT vocabulary.
+- Current references prioritize JOSE/OAuth RFCs, official library guidance, and SPIFFE specifications.
 
 ## Review sequence
 

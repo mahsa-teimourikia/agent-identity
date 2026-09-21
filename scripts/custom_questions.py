@@ -11,7 +11,7 @@ QUESTIONS_DB = {
         ("Why is it dangerous to simply forward a user's token directly to an agent?", ["Because tokens are heavy", "It hides the agent as an actor and gives it all of the user's permissions", "Because tokens expire too quickly"], 1, "Forwarding a bearer token is impersonation, masking the true actor and bypassing least privilege.")
     ],
     "03-authentication-credentials-tokens": [
-        ("Why is a string like 'agent:payments' not considered authentication?", ["It is too short.", "It is just a claim, not proof or evidence of identity.", "It contains a colon."], 1, "Authentication requires proof (evidence), not just an identifier string."),
+        ("A signed token contains an unknown kid and a jku URL controlled by the caller. What should the purchasing API do?", ["Fetch the URL to discover the verification key", "Decode the claims and accept if the issuer string looks familiar", "Deny because key discovery must be configured for a trusted issuer, not redirected by token headers"], 2, "A key ID selects among issuer-bound trusted keys; received jku or x5u values must not create a trust anchor or SSRF path."),
         ("Which of the following is a type of credential providing evidence of identity?", ["A signed JWT", "A plain text JSON file", "A username"], 0, "Signed JWTs provide cryptographic evidence that can be verified."),
         ("What happens if a bearer token is leaked?", ["Nothing, they are secure by default", "It can lead to impersonation because possession is usually enough to use it", "The token automatically self-destructs"], 1, "Bearer tokens are susceptible to theft and replay.")
     ],

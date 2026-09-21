@@ -1,4 +1,4 @@
-"""Invariant tests for Beginner 01's evidence-bound procurement boundary."""
+"""Course 01 invariant tests for the evidence-bound procurement boundary."""
 from __future__ import annotations
 
 import runpy
