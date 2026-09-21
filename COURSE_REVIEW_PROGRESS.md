@@ -9,7 +9,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | Beginner 01 — Agent Identity Foundations | Deep pass complete | Evidence-bound identity, delegation, failure cases, measurable evaluation |
 | Beginner 02 — Humans, Workloads and Agents | Deep pass complete | Principal taxonomy, multi-hop provenance, deployment and delegation relationships |
 | Beginner 03 — Authentication, Credentials and Tokens | Deep pass complete | Token profiles, issuer-bound key selection, rotation, replay, observable decisions |
-| Beginner 04 — Authorization for Agents | Next | Default deny, policy models, delegated scope, PEP/PDP enforcement |
+| Beginner 04 — Authorization for Agents | Deep pass complete | Default deny, policy models, scoped delegation, approval receipts, PEP/PDP enforcement |
+| Beginner 05 — Least-Privilege Tool Access | Next | Tool catalogs, argument constraints, credentials, approvals, runtime enforcement |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -66,6 +67,26 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed notebook covering profile and JWK inspection, a real signature-only baseline, hardened verification, rotation, replay, evaluation, malicious key references, and production mapping.
 - Learning Hub checkpoint tests trust-anchor judgment rather than JWT vocabulary.
 - Current references prioritize JOSE/OAuth RFCs, official library guidance, and SPIFFE specifications.
+
+## Beginner 04 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| A broad role is eligibility, not sufficient authority | README model comparison and notebook baseline | `BroadRolePDP` compared with `RefundPDP` | Baseline executes `12/14` invalid attempts; hardened control executes `0/14` |
+| Identity and authority cannot come from model arguments | README trust boundary and notebook field inspection | separate `VerifiedContext` and `RefundProposal` contracts | Proposal-field test plus workload, actor, and tenant substitution cases |
+| Delegation is task/resource bounded and attenuated | README delegation predicates and worked trace | `DelegationGrant` and `attenuate()` | expiry/amount tests and rejection of action, resource, amount, and expiry widening |
+| High-risk authorization is an obligation backed by exact evidence | README approval lifecycle and notebook challenge flow | proposal-bound `ApprovalReceipt` plus single-use `ApprovalStore` | missing, altered, expired, self-approved, and replayed approval tests |
+| The PEP enforces typed decisions and fails closed | README PEP/PDP architecture | `RefundGateway` executes only `ALLOW` and converts PDP failure to denial | outage case creates no execution receipt |
+| Protected context is authorized before retrieval | README RAG/tool ordering and notebook resource filter | `authorized_order_context()` | cross-tenant candidate never enters returned context |
+| Common engines preserve one trusted request tuple | technology landscape and notebook adapter mapping | `policy_engine_inputs()` for OPA, Cedar, and OpenFGA | mapping test plus schema/diagnostic production guidance |
+
+## Beginner 04 — validation record
+
+- Sixteen deterministic cases producing seventeen attempts: three expected executions and fourteen expected denials or approval challenges.
+- Fourteen focused tests for identity separation, workload binding, tenant/resource authority, scoped delegation, exact approval, replay, failure behavior, retrieval, engine mappings, evidence, and metric populations.
+- Lab-backed notebook covering trust boundaries, role-only baseline, hardened PEP/PDP flow, approval obligations, failure injection, evaluation, retrieval, attenuation, and common policy-engine mappings.
+- Learning Hub checkpoint asks for a cross-tenant authorization judgment rather than a PDP vocabulary definition.
+- Current references prioritize NIST, Zanzibar, OPA, Cedar, Amazon Verified Permissions, OpenFGA, and the final OpenID AuthZEN Authorization API 1.0 specification.
 
 ## Review sequence
 
