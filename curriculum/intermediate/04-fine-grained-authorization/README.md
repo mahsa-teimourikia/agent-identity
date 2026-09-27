@@ -1,1230 +1,431 @@
-# Intermediate 04 — Fine-Grained Authorization with OPA, Cedar & OpenFGA
+# Fine-Grained Authorization for AI Agents
 
-![Fine-Grained Authorization](images/fine-grained-authorization.png)
+Authentication establishes who is present. Delegation constrains what an agent may carry. Fine-grained authorization decides whether this verified subject, current agent, workload, task, resource, action, and runtime context may produce this effect now.
 
-> **Goal:** move from authenticated agents and delegated tokens to deterministic, resource-level authorization for every agent action.
+This course builds a realistic insurance-claims policy enforcement point (PEP), a deterministic reference policy decision point (PDP), executable Cedar policies, OPA and OpenFGA policy artifacts, SDK-ready requests, a labeled adversarial evaluation, and a production rollout plan.
 
-Authentication answers **who is this?** Token exchange answers **whose authority is being delegated?** Fine-grained authorization answers:
+> **Goal:** Derive trusted authorization facts, compose attribute and relationship policy, enforce obligations, and detect semantic drift before an agent action reaches a business effect.
 
-> **May this specific user + agent perform this action on this resource, in this context, right now?**
+## Course thesis
 
-```text
-User + Agent + Task + Context
-             |
-             v
-        PEP / Gateway
-             |
-             v
-       Authorization PDP
-       /       |       \
-     OPA     Cedar    OpenFGA
-             |
-             v
-        Allow / Deny
-             |
-             v
-      Tool / API / RAG
-```
+After this course, you can derive a trustworthy authorization request from authenticated application state, implement default-deny object-level decisions, compose relationship and attribute policy, enforce obligations and approvals at the PEP, test policy parity, and operate policy changes without mistaking a simulation for production evidence.
 
 ## Learning outcomes
 
-You will learn to:
+You will be able to:
 
-- separate authentication, delegation and authorization;
-- design PEP/PDP architectures;
-- understand RBAC, ABAC, ReBAC and task-based authorization;
-- treat agents as first-class principals;
-- implement contextual agent policy with OPA/Rego;
-- model typed PARC requests and explicit forbids with Cedar;
-- model relationships, delegation and resource hierarchies with OpenFGA;
-- authorize MCP tools and their target resources separately;
-- enforce authorization in RAG before content reaches the model;
-- combine user and agent authority without silently impersonating the user;
-- test authorization policies and negative cases;
-- generate decision evidence suitable for audit;
-- choose OPA, Cedar, OpenFGA, or a hybrid architecture.
+1. separate authentication, delegation, policy decision, policy enforcement, and side effects;
+2. derive subject, agent, workload, tenant, task, and resource facts from trusted systems rather than model arguments;
+3. model RBAC, ABAC, ReBAC, and policy-as-code as complementary tools;
+4. express the same core invariants in a reference evaluator, OPA/Rego, Cedar, and OpenFGA;
+5. use AuthZEN's subject-action-resource-context (SARC) request shape at the PEP/PDP boundary;
+6. bind approvals to an exact proposal and enforce every returned obligation;
+7. measure invalid acceptances, valid work blocked, semantic drift, and dependency failure behavior; and
+8. plan policy versioning, distribution, observability, rollback, and governance.
 
----
+## Prerequisites
 
-# 1. Why agent authorization is different
+- [Authorization for Agents](../../beginner/04-authorization-for-agents/)
+- [Least-Privilege Tool Access](../../beginner/05-least-privilege-tool-access/)
+- [OAuth and OIDC for Agents](../02-oauth-oidc-for-agents/)
+- [Token Exchange, Delegation, and Impersonation](../03-token-exchange-delegation-impersonation/)
+- Python 3.10+
 
-Traditional applications often ask:
+The next course, [Dynamic Authorization and Continuous Access Evaluation](../05-dynamic-authorization-cae/), adds mid-session signal changes and revocation. This course focuses on one correctly assembled authorization decision and its enforcement.
 
-```text
-Can Alice access document 123?
-```
+## Scenario and success criteria
 
-Agent systems need richer questions:
+Northstar Mutual uses an AI claims-adjuster to read a claim, update an open claim, or create a settlement payment. Alice starts a bounded task for `claim:clm-100`. The workload is authenticated as `spiffe://northstar.example/claims/adjuster`. A fraud service supplies a short-lived risk signal. Payments require a supervisor receipt bound to the exact proposal.
 
-```text
-Can agent:travel, acting for Alice,
-under task trip:483,
-call tool payment.create,
-against invoice 927,
-for CAD 300,
-before task expiry,
-from an approved workload?
-```
+The lab succeeds only when:
 
-A broad OAuth scope cannot answer all of that.
+- the four valid cases execute;
+- all 29 invalid, boundary, and dependency-failure cases are blocked;
+- no decision trusts identity, tenant, scope, or approval supplied by the agent proposal;
+- Cedar and the reference evaluator agree on all 30 policy cases they both execute;
+- unsupported obligations, stale policy versions, and PDP outages fail closed; and
+- the release gate reports zero invalid acceptances and zero valid work blocked.
 
-A token may prove:
+### Non-goals
 
-```text
-scope = payments:create
-```
+- Building an identity provider or token broker; the prior courses establish those facts.
+- Claiming that local policy tests prove a distributed production deployment.
+- Treating OpenFGA alone as an attribute/risk/approval engine.
+- Using an LLM to decide authorization.
 
-but resource authorization still needs to decide:
+## The central trust boundary
 
 ```text
-which payment?
-how much?
-which account?
-which user?
-which agent?
-which task?
-was approval obtained?
+agent/model -> proposes {action, resource, parameters, operation_id}
+application -> authenticates caller and loads task/resource/risk/approval facts
+PEP         -> constructs a trusted request and asks the PDP
+PDP         -> returns allow/deny, reasons, policy version, obligations
+PEP         -> verifies response, fulfills every obligation, executes once, records evidence
 ```
 
-Fine-grained authorization belongs at the action/resource boundary.
+An agent-provided `tenant_id`, `is_admin`, `approved=true`, or `workload_trusted=true` is data, not authority. In `lab.py`, `ActionProposal` deliberately cannot carry identity, tenant, scopes, or approval state.
 
----
+## Mental model: five planes
 
-# 2. Authentication is not authorization
-
-Do not write:
-
-```python
-if token_valid:
-    execute_tool()
-```
-
-A valid token proves only that a credential passed authentication/validation.
-
-A stronger flow is:
-
-```text
-authenticate caller
-      |
-resolve subject + actor
-      |
-resolve task/resource/context
-      |
-authorize
-      |
-execute
-```
-
----
-
-# 3. PEP and PDP
-
-A **Policy Enforcement Point (PEP)** intercepts an operation.
-
-A **Policy Decision Point (PDP)** decides whether it is allowed.
-
-```text
-Agent
-  |
-  v
-PEP ----------------> PDP
- |                    |
- | request            | policy + relationships + context
- |                    |
- | <------ decision --+
- |
- v
-Tool/API
-```
-
-Examples of PEPs:
-
-```text
-API gateway
-MCP server
-tool wrapper
-RAG retriever
-agent runtime
-service middleware
-token broker
-```
-
-The LLM should not be the authorization PEP.
-
----
-
-# 4. Default deny
-
-A core rule:
-
-```text
-No matching permission -> deny
-```
-
-Do not rely on:
-
-```text
-"the prompt told the agent not to do it"
-```
-
-Authorization must be deterministic and outside model reasoning.
-
----
-
-# 5. RBAC
-
-Role-Based Access Control:
-
-```text
-user -> role -> permissions
-```
-
-Example:
-
-```text
-Alice -> claims_adjuster
-claims_adjuster -> claim:read
-```
-
-RBAC is useful for broad organizational permissions but becomes awkward when agents need task/resource-specific grants.
-
----
-
-# 6. ABAC
-
-Attribute-Based Access Control evaluates attributes:
-
-```text
-principal.department
-agent.risk_tier
-resource.classification
-context.amount
-context.time
-task.purpose
-```
-
-Example:
-
-```text
-allow if:
-user.department == "claims"
-AND resource.region == user.region
-AND amount <= 500
-AND agent.risk_tier <= 2
-```
-
-OPA and Cedar are especially natural for this style.
-
----
-
-# 7. ReBAC
-
-Relationship-Based Access Control evaluates graph relationships.
-
-```text
-Alice --member--> project:atlas
-project:atlas --contains--> document:42
-agent:research --assigned--> task:9
-task:9 --targets--> project:atlas
-```
-
-OpenFGA is designed around this model.
-
-OpenFGA's current agent guidance explicitly recommends treating agents as first-class principals, using explicit delegation and task-scoped grants rather than copying a user's entire permission footprint. Its 2026 agent documentation also includes dedicated patterns for MCP and RAG authorization. 
-
----
-
-# 8. Task-based authorization
-
-A useful agent model is:
-
-```text
-agent starts with zero task permission
-       |
-       v
-task created
-       |
-       v
-narrow grant
-       |
-       v
-task ends / expires
-       |
-       v
-grant disappears
-```
-
-Example:
-
-```text
-task:refund-928
-agent:refund-bot
-action: refund:create
-resource: order:123
-max_amount: 200
-expires: 14:05
-```
-
-OpenFGA's current task-based agent guidance uses this same core idea: temporary, task-specific permissions rather than permanent broad credentials.
-
----
-
-# 9. User AND agent authority
-
-When an agent acts for a user, two authorization dimensions may matter:
-
-```text
-Can Alice do it?
-AND
-May this agent do it?
-```
-
-Avoid:
-
-```text
-agent inherits everything Alice can do
-```
-
-Prefer an intersection:
-
-```text
-effective authority =
-user authority
-∩ agent authority
-∩ task authority
-∩ runtime policy
-```
-
----
-
-# 10. OPA and Rego
-
-Open Policy Agent is a general-purpose policy engine. Its declarative language, **Rego**, evaluates structured input and data.
-
-A request can be represented as JSON:
-
-```json
-{
-  "user": {"id":"alice","roles":["employee"]},
-  "agent": {"id":"travel","risk_tier":1},
-  "action":"book",
-  "resource":{"type":"trip","owner":"alice"},
-  "context":{"amount":450,"task_active":true}
-}
-```
-
-Rego:
-
-```rego
-package agent.authz
-
-default allow := false
-
-allow if {
-    input.user.id == input.resource.owner
-    input.agent.id == "travel"
-    input.action == "book"
-    input.context.task_active
-    input.context.amount <= 500
-}
-```
-
-OPA is deliberately general: policy can reason over nested structured data, external policy data, API requests, deployment metadata and arbitrary contextual inputs. Its built-in test framework supports policy unit tests and coverage.
-
----
-
-# 11. Why OPA fits agents
-
-OPA is strong when the authorization question combines many dynamic facts:
-
-```text
-JWT claims
-agent metadata
-task metadata
-risk score
-approval state
-resource attributes
-tool metadata
-environment
-network
-time
-amount
-```
-
-It is also useful when the same policy platform governs:
-
-```text
-API authorization
-Kubernetes admission
-CI/CD
-infrastructure
-agent actions
-```
-
----
-
-# 12. Rego design for agent policy
-
-Separate:
-
-```text
-identity facts
-relationship facts
-task facts
-policy
-```
-
-Avoid hard-coding all enterprise state directly into policy files.
-
-Example policy decision:
-
-```rego
-decision := {
-  "allow": allow,
-  "reason": reason,
-  "policy": "payment-v3"
-}
-```
-
-Returning structured decision metadata improves auditability.
-
----
-
-# 13. OPA policy testing
-
-OPA supports tests written as Rego rules prefixed with `test_`.
-
-For security policy, test both:
-
-```text
-expected allow
-expected deny
-```
-
-especially:
-
-```text
-wrong user
-wrong agent
-expired task
-wrong resource
-too much money
-missing approval
-untrusted workload
-```
-
-Policy tests belong in CI.
-
----
-
-# 14. Cedar
-
-Cedar is a purpose-built authorization policy language.
-
-A Cedar request has four core components, commonly called **PARC**:
-
-```text
-Principal
-Action
-Resource
-Context
-```
-
-The current Cedar documentation describes authorization precisely as:
-
-```text
-Can this principal take this action
-on this resource
-in this context?
-```
-
-Cedar 4.5 is the current documented language version as of this course update.
-
----
-
-# 15. Cedar policy
-
-Example:
-
-```cedar
-permit (
-    principal is Agent,
-    action == Action::"ReadDocument",
-    resource is Document
-)
-when {
-    resource.owner == context.onBehalfOf &&
-    principal.riskTier <= 2 &&
-    context.taskActive
-};
-```
-
-A `forbid` can override a permit:
-
-```cedar
-forbid (
-    principal,
-    action == Action::"ExecutePayment",
-    resource
-)
-when {
-    context.amount > 500
-};
-```
-
-This explicit permit/forbid model is attractive for security-sensitive agent rules.
-
----
-
-# 16. Cedar schemas
-
-Cedar supports schemas describing:
-
-```text
-principal types
-resource types
-actions
-attributes
-context
-```
-
-Schemas help catch policy/model mistakes before runtime.
-
-For enterprise agent authorization, define types such as:
-
-```text
-User
-Agent
-Task
-Document
-Account
-Tool
-Action
-```
-
-rather than passing unstructured blobs everywhere.
-
----
-
-# 17. Cedar agent patterns
-
-Current Cedar guidance explicitly documents two patterns for agents acting on behalf of a user:
-
-```text
-Pattern A
-principal = Agent
-context.onBehalfOf = User
-```
-
-when agent permissions are primary;
-
-or:
-
-```text
-Pattern B
-principal = User
-context.viaAgent = Agent
-```
-
-when user permissions are primary.
-
-The correct choice depends on which identity should be the primary authorization principal. Both identities should remain available to policy.
-
----
-
-# 18. Cedar forbid precedence
-
-Cedar's decision algorithm is deny-safe:
-
-```text
-matching forbid -> Deny
-else matching permit -> Allow
-else -> Deny
-```
-
-This is useful for enterprise guardrails.
-
-Example:
-
-```text
-permit claims agent to update claim
-```
-
-but:
-
-```text
-forbid if fraud_hold == true
-```
-
-The forbid wins.
-
----
-
-# 19. OpenFGA
-
-OpenFGA is a relationship-based authorization system inspired by Zanzibar-style modeling.
-
-Instead of asking:
-
-```text
-Does this JSON satisfy a rule?
-```
-
-the core question is:
-
-```text
-Does principal X have relation Y with object Z?
-```
-
-Example tuple:
-
-```text
-agent:researcher
-viewer
-document:42
-```
-
-or:
-
-```text
-user:alice
-member
-workspace:atlas
-```
-
----
-
-# 20. OpenFGA model
-
-Example:
-
-```text
-model
-  schema 1.1
-
-type user
-
-type agent
-
-type workspace
-  relations
-    define member: [user]
-    define agent_member: [agent]
-
-type document
-  relations
-    define workspace: [workspace]
-    define viewer: [user, agent] or member from workspace
-```
-
-Relationships become explicit, queryable authorization state.
-
----
-
-# 21. Agents as first-class principals
-
-OpenFGA's current agent authorization documentation recommends modeling:
-
-```text
-type agent
-```
-
-rather than pretending the agent is a user.
-
-This allows:
-
-```text
-independent grants
-independent revocation
-agent-specific permissions
-list accessible objects
-audit agent access
-```
-
-and preserves the distinction:
-
-```text
-on behalf of != as
-```
-
----
-
-# 22. Delegation in ReBAC
-
-Model:
-
-```text
-agent:travel
-  can_act_on_behalf_of
-user:alice
-```
-
-Then separately:
-
-```text
-user:alice
-  owner
-calendar:alice
-```
-
-and:
-
-```text
-agent:travel
-  assigned
-task:trip-483
-```
-
-Authorization can require multiple relationships.
-
----
-
-# 23. Contextual tuples
-
-Some permissions are temporary.
-
-Rather than persisting a permanent relationship:
-
-```text
-agent:refund can_execute refund:123
-```
-
-a request can provide contextual relationship information representing the current task/session.
-
-This is useful for:
-
-```text
-temporary task grants
-session context
-organization context
-ephemeral delegation
-```
-
-Be careful that the PEP—not the untrusted agent—constructs trusted contextual authorization facts.
-
----
-
-# 24. OpenFGA and MCP
-
-Current OpenFGA guidance includes a dedicated MCP authorization pattern.
-
-Model:
-
-```text
-tool:search
-tool:calendar-read
-tool:payment-create
-```
-
-and relation:
-
-```text
-can_call
-```
-
-Then check each MCP invocation.
-
-For agents requiring agent-specific permissions, model the agent itself as a principal rather than relying only on the human caller.
-
----
-
-# 25. Tool authorization is not resource authorization
-
-Suppose:
-
-```text
-agent may call:
-document.read
-```
-
-That does not mean:
-
-```text
-agent may read every document
-```
-
-Perform two checks:
-
-```text
-1. may call tool?
-2. may access target resource?
-```
-
-Example:
-
-```text
-can_call(agent, document.read)
-AND
-can_view(user/agent, document:42)
-```
-
----
-
-# 26. Authorization-aware RAG
-
-A RAG pipeline can leak data before generation if retrieval ignores permissions.
-
-Unsafe:
-
-```text
-query
- -> vector search
- -> top 20 confidential chunks
- -> LLM
- -> filter final answer
-```
-
-The model already saw the data.
-
-Safer:
-
-```text
-query
- -> retrieve candidates
- -> authorization filter
- -> authorized chunks only
- -> LLM
-```
-
-OpenFGA's current RAG guidance explicitly recommends placing authorization after retrieval and **before documents reach the LLM**, with patterns for LangChain, LlamaIndex and custom pipelines.
-
----
-
-# 27. Pre-filter vs post-retrieval authorization
-
-### Pre-filter
-
-Use authorized IDs/metadata during retrieval.
-
-Pros:
-
-```text
-less sensitive data retrieved
-efficient if backend supports filters
-```
-
-Cons:
-
-```text
-permission filters can be complex
-index synchronization required
-```
-
-### Post-retrieval authorization
-
-Retrieve candidates, then authorize each.
-
-Pros:
-
-```text
-simple security boundary
-works across vector stores
-```
-
-Cons:
-
-```text
-more authorization calls
-must over-fetch
-```
-
-Hybrid designs are common.
-
----
-
-# 28. OPA vs Cedar vs OpenFGA
-
-| Dimension | OPA/Rego | Cedar | OpenFGA |
+| Plane | Responsibility | Example source | Must not do |
 |---|---|---|---|
-| Core strength | General policy logic | Typed authorization policy | Relationship graph |
-| Natural model | ABAC/general | PARC + RBAC/ABAC | ReBAC |
-| Dynamic context | Excellent | Excellent | Good via conditions/context |
-| Hierarchies | Possible | Entity hierarchy | Excellent |
-| Agent relationships | Custom | Custom typed entities | Excellent |
-| Explicit forbid | Policy logic | Native `forbid` | Model-dependent |
-| Schema | Input conventions | Strong schema support | Authorization model |
-| Policy tests | Strong | Strong tooling/ecosystem | Model tests/checks |
-| RAG permissions | Good custom integration | Good custom integration | Strong relationship model |
-| MCP tool graph | Good | Good | Strong |
-| General non-auth policy | Excellent | Not primary goal | Not primary goal |
+| Identity | Authenticate user, client, agent, and workload | OIDC, mTLS, SPIFFE | Infer identity from prompt text |
+| Delegation | Bound task, scopes, actor chain, resource and lifetime | token exchange / task grant | Widen parent authority |
+| Information | Supply current resource, tenant, risk and lifecycle facts | claims DB, fraud service | Accept caller assertions as facts |
+| Decision | Evaluate policy and return structured output | OPA, Cedar, OpenFGA composition | Perform the business effect |
+| Enforcement | Fulfill obligations and execute exactly once | API gateway / service PEP | Treat `allow` as successful execution |
 
-This is not a winner-takes-all comparison.
+The Policy Information Point (PIP) supplies facts; the PDP decides; the PEP enforces. These are logical roles and may be separate services, sidecars, libraries, or modules.
 
----
+## Authorization models
 
-# 29. When to choose OPA
+### RBAC
 
-Choose OPA when:
+Role-based access control maps principals to roles and roles to permissions. It is simple and auditable, but roles become unwieldy when policy depends on object ownership, tenant, task, amount, risk, or time. Use roles as one input, not as the entire decision.
 
-```text
-authorization is highly contextual
-you already operate OPA
-policy spans many system domains
-input is naturally JSON
-complex computed rules matter
-```
+### ABAC
 
-Example:
+Attribute-based access control evaluates principal, resource, action, and environmental attributes. It naturally handles tenant equality, risk thresholds, resource state, and payment limits. Its weakness is attribute provenance: an expressive policy is unsafe when attributes are stale or attacker-controlled.
 
-```text
-allow payment if
-user + agent + task + risk + amount + approval + environment satisfy policy
-```
+### ReBAC
 
----
+Relationship-based access control answers graph questions such as “is this agent both assigned and delegated to the task that is attached to this claim?” It is strong for sharing and nested relationships. Highly dynamic numeric conditions, receipts, and operational obligations usually require composition with an attribute-aware layer.
 
-# 30. When to choose Cedar
+### Policy as code
 
-Choose Cedar when:
+Policy as code stores reviewable, testable, versioned decision logic separately from business handlers. Separation does not remove the PEP's responsibility. A perfect policy with a handler that ignores obligations or uses the wrong object still fails.
 
-```text
-authorization is the primary problem
-typed principals/actions/resources matter
-schema validation is valuable
-explicit forbid semantics are attractive
-you want analyzable authorization policies
-```
+## Decision contract
 
-Cedar is also the policy language behind AWS Verified Permissions.
+The lab evaluates a typed `AuthorizationInput`:
 
----
+- `VerifiedCaller`: authenticated subject, current agent, workload, tenant, scopes, and attestation result;
+- `TaskGrant`: requester, assignee, object, allowed actions, status, and expiry;
+- `ResourceRecord`: authoritative object, tenant, owner, state, and version;
+- `RiskSignal`: resource-bound, tenant-bound, timestamped signal and source;
+- `ActionProposal`: action, object, parameters, purpose, and stable operation ID; and
+- `ApprovalReceipt`: exact, role-bound, expiring approval for high-impact payment.
 
-# 31. When to choose OpenFGA
+The `Decision` contains `allowed`, stable reason codes, mandatory obligations, a decision ID, policy version, and an input digest. It excludes raw credentials and private reasoning.
 
-Choose OpenFGA when:
+## Mechanics: how one request is decided
+
+### 1. Authenticate before authorization
+
+The application verifies the user session, client, workload identity, token issuer/audience/time/key profile, and delegation chain. The resulting `VerifiedCaller` is not created from the tool call.
+
+### 2. Hydrate authoritative objects
+
+The resource service loads `claim:clm-100`; the task store loads the exact task; the risk service returns a recent signal. Each record carries its own tenant and object identifier so the PDP can detect confused-deputy substitutions.
+
+### 3. Bind all dimensions
+
+The reference policy checks:
 
 ```text
-permissions are graph-shaped
-resources have hierarchies
-sharing matters
-agents need first-class relationships
-you need "what can this agent access?" queries
-RAG/document authorization is central
-delegation is relationship-heavy
+verified caller
+AND attested allowed workload
+AND subject == task.requester
+AND agent == task.assignee
+AND task active and current
+AND proposal.resource == task.resource == loaded resource
+AND caller.tenant == task.tenant == resource.tenant == risk.tenant
+AND action in task.allowed_actions
+AND required scope present
+AND action-specific state, risk, purpose, amount, and approval constraints
 ```
 
-OpenFGA's reverse-query capabilities are particularly useful for permission-aware retrieval and UI/tool discovery.
+Missing data denies. A broad token scope never replaces object and task checks.
 
----
+### 4. Return obligations
 
-# 32. Hybrid architecture
+An allow decision may require machine-readable work:
 
-Many enterprises need both relationship facts and contextual policy.
+- `audit`: persist privacy-safe decision evidence;
+- `redact_pii`: remove protected fields before returning a read result; or
+- `idempotency`: execute the payment under the stable operation ID.
 
-Example:
+If the PEP does not support every obligation, it denies. AuthZEN's obligations profile follows the same principle: obligations are mandatory, not suggestions.
+
+### 5. Execute once and verify
+
+The PEP consumes an exact payment approval atomically, reconciles an identical retry, rejects a changed request that reuses an operation ID, performs the side effect, and records the outcome. PDP allow is not itself proof of execution.
+
+## AuthZEN interoperability
+
+The OpenID AuthZEN Authorization API standardizes the PEP/PDP request boundary without prescribing a policy language. Its core request is SARC: subject, action, resource, and context. `authzen_request()` creates this structure from trusted state.
+
+As of January 2026, Authorization API 1.0 is a final specification. The working group also publishes drafts for obligations, access requests/approvals, and MCP-oriented COAZ mappings. A requestable denial remains a denial until re-evaluation; an approval workflow must not silently convert a deny into access.
+
+## OPA and Rego
+
+[Open Policy Agent](https://www.openpolicyagent.org/) is a general-purpose policy engine. Rego evaluates structured input and data. In this course:
+
+- `policies/opa/claims.rego` implements default deny, common trust checks, action-specific policy, and obligations;
+- `policies/opa/claims_test.rego` tests tenant, object, workload, risk, approval, and obligation behavior;
+- `opa_input()` creates a privacy-conscious input document; and
+- `opa_client()` constructs the maintained Python client without pretending a server call occurred.
+
+Run a local OPA binary when available:
+
+```bash
+opa check policies/opa/claims.rego policies/opa/claims_test.rego
+opa test -v policies/opa
+opa eval --data policies/opa/claims.rego --input request.json 'data.claims.authz.decision'
+```
+
+Production OPA typically distributes signed/versioned bundles, reports status, and emits decision logs. Logs can contain sensitive input, so use masking and retain the decision ID and bundle revision rather than copying credentials or full claim records.
+
+## Cedar
+
+[Cedar](https://www.cedarpolicy.com/) is an authorization policy language with explicit `permit` and `forbid` semantics and schema-based validation. Any matching `forbid` overrides permits; no matching permit means deny.
+
+This course uses:
+
+- `policies/cedar/schema.json`, in the current namespaced JSON schema shape;
+- `policies/cedar/claims.cedar`, with read, update, payment, and cross-cutting forbid logic;
+- `cedarpy.validate_policies()` to prove policy/schema compatibility; and
+- `cedarpy.is_authorized()` to execute every normal labeled case locally.
+
+Schema validation and authorization are distinct. Validate during build and deployment, but still submit schema-conforming entities and context at runtime. The PIP-derived booleans in this lab are an integration boundary: production systems should preserve source IDs, timestamps, and versions alongside them.
+
+## OpenFGA
+
+[OpenFGA](https://openfga.dev/) models relationships with tuples and evaluates checks against a versioned authorization model. The model in this course requires an agent to be both `assignee` and `delegated_agent` for a task attached to the claim.
+
+`openfga_check()` creates a real `openfga_sdk.client.models.ClientCheckRequest` with contextual tuples. Contextual tuples are request-scoped facts; they are not persisted and must be validated and bounded like any other authorization input.
+
+OpenFGA establishes the relationship plane. The reference/OPA/Cedar layer still checks workload attestation, tenant consistency, task expiry, resource state, risk, amount, exact approval, and obligations. A production service can deny unless both layers allow:
 
 ```text
-OpenFGA:
-Does Alice have access to account 42?
-Is agent A assigned to task 9?
-
-OPA/Cedar:
-Is this action allowed right now,
-given risk, amount, approval, workload,
-purpose and environment?
+final_allow = openfga_relationship_allow AND attribute_policy_allow
 ```
 
-Architecture:
+Persist lifecycle relationships when they must survive requests. Delete task tuples when a task ends. Use explicit consistency choices for high-impact operations, record the model ID, and test stale-model behavior.
 
-```text
-PEP
- |
- +--> OpenFGA relationship check
- |
- +--> OPA/Cedar contextual policy
- |
- +--> combine decisions
- |
- v
-allow only if both allow
+## Technology landscape
+
+| Option | Best fit | Strengths | Limitations | Evidence in this lab |
+|---|---|---|---|---|
+| In-process reference PDP | Teaching, small bounded services | Deterministic, debuggable, no network | Application-specific; governance burden | Fully executed and tested |
+| OPA/Rego | Polyglot attribute policy and platform control | Mature ecosystem, bundles, tests, decision logs | Separate runtime/operations; Rego learning curve | Policy and tests included; server adapter only |
+| Cedar / Verified Permissions | Application authorization with typed schema | Readable policies, forbid precedence, validation | Entity/context integration work; hosted AVP differs operationally | Policy is validated and executed locally |
+| OpenFGA | Relationship-heavy sharing and task graphs | Purpose-built ReBAC, model IDs, SDKs | Not a complete risk/approval/obligation system | Model and real SDK check request; no default server |
+| AuthZEN | Vendor-neutral PEP/PDP boundary | Interoperability and SARC contract | Does not define business policy or fact provenance | Request builder and response concepts |
+
+Selection questions:
+
+1. Are rules primarily relationships, attributes, or a composition?
+2. Must decisions run locally, remotely, or both?
+3. How are policies/models versioned, validated, distributed, and rolled back?
+4. What consistency is required for revocation and high-impact writes?
+5. Can the PEP support every obligation and preserve decision evidence?
+6. Who owns attribute quality and lifecycle cleanup?
+
+## Worked request
+
+Alice delegates an active claim task to the verified claims workload. The agent proposes a USD 250 settlement payment for `claim:clm-100`.
+
+1. The application loads the caller, task, claim, and fraud signal.
+2. It computes the proposal digest and retrieves a supervisor receipt bound to the task, object, action, amount/purpose digest, policy version, and expiry.
+3. The reference PDP verifies identity, tenant, task, scope, resource, state, risk, amount, purpose, and receipt.
+4. The PDP allows with `audit` and `idempotency` obligations.
+5. The PEP verifies the policy version and obligation support, atomically consumes the receipt, and records the operation.
+6. An identical retry returns the existing receipt. A modified amount under the same operation ID fails with `operation_id_conflict`.
+
+## Run the lab
+
+```bash
+cd curriculum/intermediate/04-fine-grained-authorization
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python lab.py
+pytest -q tests
 ```
 
----
+Open `fine_grained_authorization.ipynb` for the guided lab. It imports `lab.py`; the notebook does not duplicate a second implementation.
 
-# 33. Avoid policy-engine bypass
+## Experiments and evaluation
 
-Every sensitive path must pass the PEP.
+`build_cases()` contains 33 labeled cases:
 
-Bad:
+- 4 valid reads, updates, and payments;
+- 5 identity/workload substitutions;
+- 3 isolation failures;
+- 2 task lifecycle failures;
+- 5 authority/object/ownership/scope failures;
+- resource-state, risk boundary, freshness, provenance, and range failures;
+- 6 amount, purpose, and exact-approval failures; and
+- PDP outage, stale policy, and unsupported-obligation failures.
 
-```text
-API endpoint -> PDP
-background worker -> direct DB write
-MCP tool -> direct DB write
-admin script -> direct API bypass
+The intentionally unsafe scope-only baseline accepts 28 invalid cases. The hardened path matches all 33 labels. These deterministic fixture results are regression evidence, not a claim about production traffic.
+
+Metrics have explicit populations:
+
+| Metric | Numerator / denominator | Desired direction |
+|---|---|---|
+| Outcome accuracy | correctly matched labels / all 33 cases | Higher |
+| Invalid acceptance rate | invalid cases allowed / 29 invalid cases | Zero |
+| Valid work blocked rate | valid cases denied / 4 valid cases | Zero |
+| Cedar parity | cases matching expected, reference, and Cedar / 30 normal cases | 100% |
+
+The release gate requires at least 30 cases, 100% label agreement, zero invalid acceptances, and zero valid work blocked. Add representative production-derived cases before using equivalent gates operationally.
+
+## Failure modes and mitigations
+
+| Failure | Why it happens | Required mitigation |
+|---|---|---|
+| Scope-only allow | Token permission is mistaken for object authority | Intersect identity, task, tenant, object, action, state, and context |
+| Caller-supplied trust | Tool arguments include `approved=true` or tenant | Derive facts from verified application state |
+| Confused deputy | Valid agent swaps claim or tenant | Bind proposal, task, resource, risk, and approval identifiers |
+| Stale attribute | Risk/task/resource changed after caching | Short TTL, source timestamps/version, re-evaluate writes |
+| Approval boolean | Any truthy flag authorizes payment | Exact expiring receipt; atomic single use |
+| Obligation ignored | PEP treats allow as sufficient | Deny unless every obligation is understood and fulfilled |
+| Policy drift | Engines encode different semantics | Shared labeled corpus and parity checks |
+| Fail-open outage | PDP error becomes allow | Explicit fail-closed path; narrowly designed emergency policy if required |
+| Relationship leak | Task tuples survive task closure | Lifecycle owner and tuple deletion/reconciliation |
+| Unsafe retry | Network uncertainty duplicates payment | Stable operation ID, exact fingerprint, reconciliation |
+| Sensitive logs | Full input or credentials enter decision logs | Digests, masks, allowlists, retention controls |
+
+## When not to externalize authorization
+
+An external PDP can be excessive for a tiny service with a few stable checks, very tight latency constraints, and no cross-service policy. An in-process typed evaluator can be safer than a network dependency. Keep the contract and tests so the architecture can evolve without changing semantics.
+
+Do not adopt ReBAC merely because an agent graph exists. Use it when relationship traversal is genuinely central. Do not push volatile telemetry into a relationship store when a short-lived context attribute is more honest.
+
+## Production architecture
+
+```mermaid
+flowchart LR
+    A[Agent proposal] --> PEP[Service PEP]
+    ID[Verified identity and delegation] --> PEP
+    DB[Claim and task stores] --> PIP[Policy information adapter]
+    R[Risk and approval services] --> PIP
+    PIP --> PEP
+    PEP --> PDP[OPA or Cedar PDP]
+    PEP --> FGA[OpenFGA relationship check]
+    PDP -->|decision, version, obligations| PEP
+    FGA -->|allowed, model ID| PEP
+    PEP -->|all allow; obligations complete| E[Idempotent business effect]
+    PEP --> L[Masked decision evidence]
 ```
 
-Attackers will find the unguarded path.
+### Policy lifecycle
 
-Centralize enforcement or enforce consistently at every boundary.
+1. Author policy and schema/model in version control.
+2. Format, validate, lint, and execute positive/negative tests.
+3. Run parity and migration tests against representative requests.
+4. Review ownership, blast radius, and data dependencies.
+5. Publish an immutable signed artifact or model version.
+6. Deploy in shadow mode; compare decisions without effects.
+7. Canary by tenant/action; monitor invalid allows and valid denials.
+8. Promote or roll back using the recorded policy/model version.
 
----
+### Operational controls
 
-# 34. Policy input trust
+- Set a decision latency SLO and bounded timeout.
+- Choose local/sidecar evaluation where outage and latency budgets require it.
+- Record decision ID, policy/bundle/model version, input digest, reason code, and enforcement outcome.
+- Mask or erase credentials, PII, and high-cardinality payloads.
+- Alert on missing PIP data, stale bundles/models, parity drift, deny spikes, and obligation failures.
+- Keep separate owners for policy semantics, PIP data quality, PEP correctness, and business effects.
+- Re-authorize after meaningful state changes and immediately before high-impact writes.
 
-Authorization is only as strong as its input.
+## State of the art
 
-Untrusted:
+### Established practice
 
-```text
-LLM says user is Alice
-agent says approval=true
-prompt says task is active
-tool argument says classification=public
-```
+- default deny and least privilege;
+- policy-as-code with versioned tests and review;
+- local or nearby PDP deployment for predictable latency;
+- explicit resource/action decisions and privacy-conscious audit evidence;
+- relationship engines for sharing graphs and attribute engines for contextual controls.
 
-Trusted inputs should come from authoritative systems:
+### Current direction
 
-```text
-verified identity
-agent registry
-task service
-resource service
-approval service
-risk service
-```
+- AuthZEN standardizes PEP/PDP interoperability instead of coupling each application to one vendor API;
+- policy responses increasingly include structured obligations rather than a bare boolean;
+- agent authorization composes verified workload identity, user delegation, task relationships, object state, and runtime risk;
+- continuous evaluation and shared signals shorten the lifetime of stale authorization decisions.
 
----
+### Open problems
 
-# 35. Decision evidence
+- proving semantic equivalence across policy engines;
+- safe caching under rapid revocation and partial network failure;
+- explaining composed graph-and-attribute decisions without leaking sensitive data;
+- governing agent-created task relationships at scale; and
+- measuring policy quality from biased, incomplete production denials.
 
-Useful decision log:
+## Exercises
 
-```json
-{
-  "decision_id":"dec:992",
-  "subject":"user:alice",
-  "actor":"agent:travel",
-  "action":"payment:create",
-  "resource":"invoice:927",
-  "task":"trip:483",
-  "decision":"deny",
-  "reason":"amount exceeds autonomous limit",
-  "policy_version":"payments-17",
-  "pdp":"opa"
-}
-```
+### Implementation
 
-Do not log secrets or raw bearer tokens.
+Add `claim.document.download`. Require task/resource binding, `claims:read`, a clean malware verdict tied to the exact document version, and a watermark obligation. Add positive, stale-verdict, wrong-document, and unsupported-obligation tests.
 
----
+### Diagnosis
 
-# 36. Policy versioning
+Change the Cedar risk boundary from `< 50` to `<= 50`. Run the parity corpus, identify the drift case, and write the smallest policy correction plus a regression test.
 
-Every decision should be reproducible against:
+### Architecture
 
-```text
-policy version
-authorization model version
-relationship snapshot/version where practical
-input facts
-decision
-```
+Design a two-region deployment. Decide which facts live in OpenFGA, which remain request context, the consistency mode for payments, outage behavior, model migration strategy, and evidence needed for incident reconstruction.
 
-Policies are production code.
+### Production extension
 
-Use:
+Run OPA locally, submit `opa_input(environment())` through `opa-python-client`, capture the returned decision ID and bundle revision, and compare it with the reference and Cedar outputs. Keep server-dependent evidence separate from the credential-free release gate.
 
-```text
-Git
-code review
-tests
-CI/CD
-rollbacks
-change approval
-```
+## Review questions
 
----
+1. Why is a valid OAuth scope necessary but insufficient for a payment?
+2. Which facts may come from an agent proposal, and which must come from trusted application state?
+3. When should contextual OpenFGA tuples be persisted instead?
+4. Why does an unsupported obligation convert an allow response into a denied execution?
+5. What does Cedar schema validation prove, and what does it not prove?
+6. How would you detect and safely roll back semantic drift between two PDP implementations?
 
-# 37. Testing strategy
+## References
 
-Test categories:
+### Standards and interoperability
 
-```text
-happy path
-default deny
-wrong user
-wrong agent
-wrong workload
-wrong resource
-wrong tenant
-expired task
-scope escalation
-amount escalation
-missing approval
-historical actor privilege
-prompt-injected fields
-relationship removed
-policy rollback
-```
+- [OpenID AuthZEN specifications](https://openid.net/wg/authzen/specifications/)
+- [AuthZEN Authorization API 1.0](https://openid.net/specs/authorization-api-1_0.html)
+- [NIST SP 800-162: Guide to Attribute Based Access Control](https://csrc.nist.gov/pubs/sp/800/162/upd2/final)
+- [NIST SP 800-207: Zero Trust Architecture](https://csrc.nist.gov/pubs/sp/800/207/final)
 
-Authorization training should contain more deny tests than typical demo notebooks.
+### OPA
 
----
+- [OPA policy language](https://www.openpolicyagent.org/docs/policy-language)
+- [OPA policy testing](https://www.openpolicyagent.org/docs/policy-testing)
+- [OPA bundles](https://www.openpolicyagent.org/docs/management-bundles)
+- [OPA decision logs and masking](https://www.openpolicyagent.org/docs/management-decision-logs)
+- [OPA performance guidance](https://www.openpolicyagent.org/docs/policy-performance)
 
-# 38. Performance
+### Cedar
 
-Authorization sits on the hot path.
+- [Cedar policy syntax](https://docs.cedarpolicy.com/policies/syntax-policy.html)
+- [Cedar policy validation](https://docs.cedarpolicy.com/policies/validation.html)
+- [Cedar JSON schema format](https://docs.cedarpolicy.com/schema/json-schema.html)
+- [Cedar entities and context JSON](https://docs.cedarpolicy.com/auth/entities-syntax.html)
+- [Amazon Verified Permissions validation mode](https://docs.aws.amazon.com/verifiedpermissions/latest/userguide/policy-validation-mode.html)
 
-Consider:
+### OpenFGA
 
-```text
-local/sidecar PDP
-central PDP
-batch checks
-caching
-list-objects queries
-precomputed relationships
-policy compilation
-partial evaluation
-```
+- [OpenFGA concepts](https://openfga.dev/docs/concepts)
+- [OpenFGA task-based authorization for agents](https://openfga.dev/docs/modeling/agents/task-based-authorization)
+- [OpenFGA contextual tuples](https://openfga.dev/docs/interacting/contextual-tuples)
+- [OpenFGA conditions](https://openfga.dev/docs/modeling/conditions)
+- [OpenFGA consistency](https://openfga.dev/docs/interacting/consistency)
 
-Never cache a decision without considering:
+## Artifact map
 
-```text
-principal
-actor
-resource
-action
-context
-policy version
-relationship changes
-expiry
-revocation
-```
+- [`lab.py`](lab.py): deterministic reference PDP/PEP, adapters, cases, metrics, and release gate
+- [`fine_grained_authorization.ipynb`](fine_grained_authorization.ipynb): guided executable lab
+- [`tests/test_authorization.py`](tests/test_authorization.py): focused invariant tests
+- [`policies/opa/claims.rego`](policies/opa/claims.rego): Rego policy
+- [`policies/opa/claims_test.rego`](policies/opa/claims_test.rego): Rego tests
+- [`policies/cedar/claims.cedar`](policies/cedar/claims.cedar): Cedar policy
+- [`policies/cedar/schema.json`](policies/cedar/schema.json): Cedar schema
+- [`policies/openfga/model.fga`](policies/openfga/model.fga): relationship model
 
----
-
-# 39. Fail-open vs fail-closed
-
-If the PDP is unavailable:
-
-```text
-payment.execute -> fail closed
-document.delete -> fail closed
-public search -> perhaps degraded behavior
-```
-
-For sensitive agent actions, default to deny.
-
-Design availability so security does not depend on unsafe fail-open behavior.
-
----
-
-# 40. Practical notebook
-
-The notebook implements one enterprise scenario three ways:
-
-```text
-Claims Assistant
-User: Alice
-Agent: claims-agent
-Task: claim-483
-Resource: claim-483
-Tools:
-  claim.read
-  claim.update
-  payment.create
-Documents:
-  claim-note
-  medical-document
-```
-
-You will:
-
-1. implement deterministic reference authorization;
-2. generate OPA/Rego policy and tests;
-3. model Cedar PARC and permit/forbid rules;
-4. model OpenFGA tuples and relationship checks;
-5. implement agent + user intersection;
-6. authorize MCP tool calls;
-7. authorize target resources;
-8. implement task-scoped access;
-9. filter RAG results before LLM exposure;
-10. simulate policy changes and revocation;
-11. produce decision logs;
-12. compare the three approaches.
-
-The notebook uses executable Python simulations so it runs without external services, while also generating real policy/model artifacts you can run against OPA, Cedar tooling and OpenFGA.
-
----
-
-# 41. Production checklist
-
-- Is the agent a distinct principal?
-- Is the user preserved when acting on behalf of them?
-- Is default deny enforced?
-- Is authorization outside the LLM?
-- Is tool access separate from resource access?
-- Are task grants temporary?
-- Are resource relationships explicit?
-- Are context facts authoritative?
-- Are deny/forbid rules tested?
-- Does RAG filter before model exposure?
-- Can permissions be revoked independently?
-- Are decisions versioned and logged?
-- Does PDP failure fail safely?
-- Are policies tested in CI?
-
----
-
-# 42. Key takeaways
-
-1. Authentication and OAuth scopes are not enough for agent authorization.
-2. Every sensitive action should pass a deterministic PEP/PDP decision.
-3. Effective agent authority is usually an intersection of user, agent, task and runtime policy.
-4. OPA excels at general contextual policy over structured data.
-5. Cedar offers a purpose-built, typed PARC authorization model with explicit forbid semantics.
-6. OpenFGA excels at graph-shaped permissions, delegation, hierarchies and agent relationships.
-7. Agents should be first-class principals.
-8. Tool authorization and target-resource authorization are different checks.
-9. RAG authorization must happen before retrieved content reaches the LLM.
-10. Hybrid relationship + contextual policy architectures are often appropriate.
-11. Policy inputs must come from trusted systems, not model-generated assertions.
-12. Authorization policy needs tests, versioning, evidence and safe failure behavior.
-
----
-
-# References
-
-- Open Policy Agent — Policy Language  
-  https://www.openpolicyagent.org/docs/policy-language
-- Open Policy Agent — Policy Testing  
-  https://www.openpolicyagent.org/docs/policy-testing
-- Open Policy Agent — Policy Performance  
-  https://www.openpolicyagent.org/docs/policy-performance
-- Cedar Policy Language  
-  https://docs.cedarpolicy.com/
-- Cedar Authorization  
-  https://docs.cedarpolicy.com/auth/authorization.html
-- Cedar Context — Agents Acting on Behalf of a Principal  
-  https://docs.cedarpolicy.com/bestpractices/bp-using-the-context.html
-- OpenFGA — Authorization for Agents  
-  https://openfga.dev/docs/modeling/agents
-- OpenFGA — Agents as Principals  
-  https://openfga.dev/docs/modeling/agents/agents-as-principals
-- OpenFGA — Task-Based Authorization  
-  https://openfga.dev/docs/modeling/agents/task-based-authorization
-- OpenFGA — MCP Authorization  
-  https://openfga.dev/docs/modeling/agents/mcp-authorization
-- OpenFGA — RAG Authorization  
-  https://openfga.dev/docs/modeling/agents/rag-authorization
-
----
-
-# Next course
-
-## Intermediate 05 — Dynamic Authorization & Continuous Access Evaluation
-
-Next we move from static request-time decisions to continuously changing authorization state:
-
-```text
-risk changes
-session changes
-revocation
-policy changes
-task expiry
-continuous access evaluation
-step-up
-real-time authorization signals
-```
+The notebook is the primary hands-on path; the chapter is the technical reference.

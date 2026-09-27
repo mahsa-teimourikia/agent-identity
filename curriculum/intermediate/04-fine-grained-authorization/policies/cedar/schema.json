@@ -1,56 +1,50 @@
 {
-  "Agent": {
-    "memberOfTypes": [],
-    "shape": {
-      "type": "Record",
-      "attributes": {
-        "id": {
-          "type": "String",
-          "required": true
-        }
-      }
-    }
-  },
-  "Claim": {
-    "memberOfTypes": [],
-    "shape": {
-      "type": "Record",
-      "attributes": {
-        "id": {
-          "type": "String",
-          "required": true
-        }
-      }
-    }
-  },
-  "actions": {
-    "ReadClaim": {
-      "appliesTo": {
-        "principalTypes": [
-          "Agent"
-        ],
-        "resourceTypes": [
-          "Claim"
-        ],
-        "context": {
+  "": {
+    "entityTypes": {
+      "Agent": {
+        "memberOfTypes": [],
+        "shape": {
           "type": "Record",
-          "attributes": {}
+          "attributes": {"tenantId": {"type": "String", "required": true}},
+          "additionalAttributes": false
+        }
+      },
+      "Claim": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "tenantId": {"type": "String", "required": true},
+            "ownerId": {"type": "String", "required": true}
+          },
+          "additionalAttributes": false
         }
       }
     },
-    "CreatePayment": {
-      "appliesTo": {
-        "principalTypes": [
-          "Agent"
-        ],
-        "resourceTypes": [
-          "Claim"
-        ],
-        "context": {
-          "type": "Record",
-          "attributes": {}
-        }
+    "commonTypes": {
+      "AuthorizationContext": {
+        "type": "Record",
+        "attributes": {
+          "authenticated": {"type": "Boolean", "required": true},
+          "workloadAttested": {"type": "Boolean", "required": true},
+          "tenantMatch": {"type": "Boolean", "required": true},
+          "taskBinding": {"type": "Boolean", "required": true},
+          "riskCurrent": {"type": "Boolean", "required": true},
+          "claimOpen": {"type": "Boolean", "required": true},
+          "settlementApproved": {"type": "Boolean", "required": true},
+          "riskScore": {"type": "Long", "required": true},
+          "amountCents": {"type": "Long", "required": true},
+          "amountValid": {"type": "Boolean", "required": true},
+          "purposeMatches": {"type": "Boolean", "required": true},
+          "approvalValid": {"type": "Boolean", "required": true}
+        },
+        "additionalAttributes": false
       }
+    },
+    "actions": {
+      "ReadClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "AuthorizationContext"}}},
+      "UpdateClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "AuthorizationContext"}}},
+      "CreatePayment": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "AuthorizationContext"}}}
     }
   }
 }
