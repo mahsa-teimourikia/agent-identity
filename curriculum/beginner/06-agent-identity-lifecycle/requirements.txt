@@ -1,2 +1,2 @@
-# Standard library lab
-# Python >= 3.10
+pydantic>=2.8,<3
+pytest>=8.3,<10

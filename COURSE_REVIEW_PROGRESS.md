@@ -11,7 +11,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | Beginner 03 — Authentication, Credentials and Tokens | Deep pass complete | Token profiles, issuer-bound key selection, rotation, replay, observable decisions |
 | Beginner 04 — Authorization for Agents | Deep pass complete | Default deny, policy models, scoped delegation, approval receipts, PEP/PDP enforcement |
 | Beginner 05 — Least-Privilege Tool Access | Deep pass complete | Tool discovery/execution, typed contracts, credentials, egress, approval, budgets, verified effects |
-| Beginner 06 — Agent Identity Lifecycle | Next | Registration, ownership, lifecycle state, rotation, recertification, revocation |
+| Beginner 06 — Agent Identity Lifecycle | Deep pass complete | Governed state transitions, exact approvals, attested provisioning, recertification, revocation, verified retirement |
+| Intermediate 01 — Workload Identity with SPIFFE & SPIRE | Next | Trust domains, attestation, SVID lifecycle, Workload API, rotation, federation |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -109,6 +110,28 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed notebook covers catalog/schema inspection, unsafe baseline, hardened gateway, approval, exact retry, unknown outcomes, egress injection, budgets, credential isolation, result validation, MCP mapping, and quantitative evaluation.
 - Learning Hub checkpoint tests whether learners distinguish MCP risk hints from trusted enforcement.
 - Current references prioritize the MCP 2026-07-28 specification and official SDK, Pydantic/JSON Schema documentation, OpenFGA, OWASP, and NIST.
+
+## Beginner 06 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| Lifecycle requests propose changes but cannot supply administrative authority | README trust boundary and notebook field inspection | Separate `VerifiedAdminContext` and `LifecycleRequest` | Request-field and strict-payload tests |
+| Registration requires accountable identities and an approved blueprint | README registration mechanics and Northstar trace | Directory, tenant, sponsor, owner, blueprint, and version checks | Active-accountability and cross-tenant tests |
+| Approval binds the exact manifest and operation with separation of duties | README approval model and notebook approval experiment | `LifecycleApproval`, canonical digests, and single-use `ApprovalStore` | Self, altered, replay, and reconciliation tests |
+| Provisioning cannot widen approved authority or bind an untrusted runtime | README provisioning/workload sections | Exact manifest equality, blueprint subsets, and `WorkloadAttestation` | Capability-escalation and wrong-workload tests |
+| Activation and continued operation require current lifecycle evidence | README activation/review sections | Sponsor/owner, review, grant, binding, and credential invariants | Overdue, missing-artifact, and sponsor-review tests |
+| Material change cannot silently inherit runtime authority | README change-management section and notebook experiment | New manifest digest plus suspended grants/credentials and revoked sessions | Material-change invariant test |
+| Concurrency and retries must not duplicate or overwrite lifecycle effects | README version/idempotency mechanics | Optimistic record versions and operation digest ledger | Concurrent-review, exact-retry, and changed-request tests |
+| Revocation and retirement apply to the complete access graph | README incident/retirement sections and failure injection | Propagated status updates and resumable idempotent cleanup adapter | Revocation-propagation and partial-cleanup recovery tests |
+| Audit shape alone is insufficient; outcomes and tamper evidence both matter | README evaluation/evidence sections | Hash-chained frozen events plus defined safety metrics | Tamper test and baseline-versus-control release gate |
+
+## Beginner 06 — validation record
+
+- Twenty deterministic scenarios: seven legitimate lifecycle applications, twelve expected denials or approval challenges, and one expected partial-cleanup outcome.
+- Twenty-one focused invariant tests for trust separation, strict payloads, accountability, authoritative approver roles, exact approval, attested provisioning, activation, concurrency, sponsor succession, material change, reactivation, revocation, retirement, audit integrity, schemas, evidence, and metric populations.
+- Lab-backed notebook covering the unsafe baseline, governed controller, quantitative evaluation, approval, provisioning, concurrency, material change, revocation, cleanup failure, audit tampering, production mapping, and exercises.
+- Learning Hub checkpoint tests lifecycle architecture and failure recovery rather than state-name vocabulary.
+- Current references distinguish established SCIM/SPIFFE/Shared Signals practice, current product capabilities, the draft NIST agent-identity concept work, and final NIST IR 8587 token guidance.
 
 ## Review sequence
 
