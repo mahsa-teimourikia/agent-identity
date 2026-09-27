@@ -13,7 +13,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | Beginner 05 — Least-Privilege Tool Access | Deep pass complete | Tool discovery/execution, typed contracts, credentials, egress, approval, budgets, verified effects |
 | Beginner 06 — Agent Identity Lifecycle | Deep pass complete | Governed state transitions, exact approvals, attested provisioning, recertification, revocation, verified retirement |
 | Intermediate 01 — Workload Identity with SPIFFE & SPIRE | Deep pass complete | Attestation, unambiguous registration, SVID verification, full-state updates, rotation, federation |
-| Intermediate 02 — Agent Authentication with OAuth 2.0 & OIDC | Next | OAuth roles and flows, OIDC, token exchange boundaries, sender constraint, verification |
+| Intermediate 02 — Agent Authentication with OAuth 2.0 & OIDC | Deep pass complete | Transaction binding, token profiles, broker attenuation, DPoP, resource authorization, MCP |
+| Intermediate 03 — Token Exchange, Delegation & Impersonation | Next | RFC 8693 input validation, actor chains, attenuation, replay, revocation |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -153,6 +154,26 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed 42-cell executed notebook covering architecture, unsafe baseline, controlled path, X.509/JWT internals, failure injection, rotation, redaction, federation, evaluation, production mapping, and exercises.
 - Learning Hub checkpoint asks learners to diagnose ambiguous registration; three additional quiz questions cover federation, redaction, and bundle-rollout judgment.
 - References prioritize SPIFFE standards, current SPIRE documentation/releases, official Go/Java client guidance, maintained examples, and clearly label the Python package as community maintained.
+
+## Intermediate 02 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| Authorization Code/OIDC security is one bound, one-time transaction | README mechanics and notebook callback failure injection | `AuthorizationServer` binds issuer, state, redirect, PKCE, resource, workload, delegation, expiry, and atomic consumption | substitution, replay, and concurrent-redemption tests |
+| ID Tokens and access tokens have mutually exclusive consumers/profiles | README token model and notebook claim inspection | separate `issue_id_token`, `validate_id_token`, and resource-server `typ=at+jwt` path | nonce validation and ID-token-at-API denial tests |
+| Client Credentials does not create a human subject | README flow comparison and notebook machine-token inspection | `TokenBroker.client_credentials()` uses the client as subject with no actor/task | machine-subject and authority-limit test |
+| An agent broker must attenuate, never copy requested authority | README authority equation and broker experiment | trusted workload/client binding plus user-grant, task, resource, and scope intersection | scope, resource, task, actor, lifecycle, and idempotency tests |
+| Token verification does not replace object authorization | README validation order and notebook audience/object experiment | `ResourceServer` verifies profile then checks tenant, owner, action, and object state | audience, cross-subject, cross-tenant, scope, and action tests |
+| DPoP needs token-key and request/replay binding | README DPoP mechanics and seven-case notebook experiment | `cnf.jkt`, signature, method, URI, `ath`, freshness, and atomic `(jkt,jti)` checks | missing/wrong key/method/URI/token/time/replay tests |
+| Security improvement requires explicit populations and safety slices | README evaluation definitions and notebook comparison | 25-case baseline/control evaluator with a release gate | baseline accepts 19 invalid attempts; hardened path matches all 25 |
+
+## Intermediate 02 — validation record
+
+- Twenty-five deterministic scenarios: two expected valid and twenty-three expected blocked across token profile, key/time/audience, client/actor/workload policy, object policy, and DPoP boundaries.
+- Twenty-two focused test cases, including transaction substitution, concurrent one-time redemption, ID/access separation, broker attenuation, Client Credentials semantics, DPoP replay, MCP metadata, and evidence safety.
+- Lab-backed 43-cell executed notebook covers transaction internals, token profiles, unsafe baseline, controlled evaluation, failure injection, broker attenuation, DPoP, MCP discovery, production mapping, and reflection exercises.
+- Learning Hub checkpoint tests cross-resource audience judgment; three additional questions cover DPoP binding, issuer mix-up, and Client Credentials attribution.
+- References distinguish final RFCs and FAPI 2.0 from the active OAuth 2.1, OAuth SPIFFE client-authentication, Workload Authorization Grant, and other agent-oriented draft work.
 
 ## Review sequence
 
