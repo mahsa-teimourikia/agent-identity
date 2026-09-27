@@ -1,1598 +1,506 @@
-# Intermediate 02 — OAuth 2.x and OpenID Connect for Agents
+# OAuth and OpenID Connect for Agents
 
-![OAuth 2.x and OpenID Connect for Agents](images/oauth-oidc-for-agents.png)
+> **Goal:** implement, attack-test, and productionize OAuth/OIDC for an agent that acts as a workload or for a user, while preserving subject, agent, client, workload, audience, task, and resource boundaries.
 
-> **Goal:** use modern OAuth and OpenID Connect correctly when an AI agent acts as a workload, acts for a user, or obtains narrowly scoped access to tools and APIs.
+This course follows one Northstar Travel booking task through an authorization-code/OIDC client, an attested agent runtime, a token broker, a DPoP-bound access token, and a resource server. The reusable lab compares a claims-only anti-pattern with a hardened path across 25 labelled cases.
 
-Agent identity usually contains more than one principal:
+## Start here
 
-```text
-Human / Resource Owner
-          |
-          | delegates
-          v
-Agent / OAuth Client
-          |
-          | obtains constrained token
-          v
-Authorization Server
-          |
-          v
-Tool / API / MCP Server
-```
+1. Read this chapter for the protocol model, choices, current standards, and production guidance.
+2. Run the [guided notebook](oauth_oidc_for_agents.ipynb).
+3. Inspect the reusable [lab.py](lab.py).
+4. Run `uv run pytest -q curriculum/intermediate/02-oauth-oidc-for-agents/tests`.
+5. Run `uv run python curriculum/intermediate/02-oauth-oidc-for-agents/lab.py` for the baseline/control evaluation.
 
-The central security question is not merely:
-
-> "Is this agent authenticated?"
-
-It is:
-
-> **Which actor is calling, on whose authority, for which resource, with what permissions, for how long, and with what cryptographic constraints?**
-
----
+The default path is deterministic, credential-free, offline, and side-effect free. It is a teaching simulator—not an authorization server, identity provider, OAuth/OIDC certification suite, or production DPoP implementation.
 
 ## Learning outcomes
 
-You will learn to:
-
-- distinguish OAuth authorization from OIDC authentication;
-- model resource owner, client, authorization server and resource server;
-- distinguish user identity, agent/client identity and workload identity;
-- understand access, ID and refresh tokens;
-- design scopes, audiences and resource indicators;
-- use Authorization Code + PKCE for user-delegated agent flows;
-- use Client Credentials for non-user workload access;
-- understand why Client Credentials does not mean "act as the user";
-- use RFC 8693 OAuth Token Exchange for delegation;
-- reason about `subject_token` and `actor_token`;
-- preserve user + agent dual identity;
-- use DPoP sender-constrained tokens;
-- understand mutual-TLS certificate-bound access tokens;
-- integrate SPIFFE workload identity with OAuth token issuance;
-- build token-broker / STS architectures;
-- understand current MCP OAuth authorization patterns;
-- defend against token forwarding, confused deputy, audience errors and excessive scope;
-- design OAuth telemetry and revocation controls.
-
----
-
-# 1. OAuth is authorization
-
-OAuth lets a client obtain constrained access to a protected resource.
-
-Roles:
+After completing the course, you can:
 
-```text
-Resource Owner
-     |
-     v
-Client
-     |
-     v
-Authorization Server
-     |
-     v
-Access Token
-     |
-     v
-Resource Server
-```
-
-For agents:
-
-```text
-employee
-   |
-   v
-travel agent
-   |
-   v
-enterprise authorization server
-   |
-   v
-travel-api access token
-```
-
-OAuth does not inherently say:
-
-> "This token proves the user's login identity."
-
-That is one reason OpenID Connect exists.
-
----
-
-# 2. OpenID Connect is an identity layer
-
-OpenID Connect builds an identity layer on OAuth.
-
-A client requests OIDC scopes such as:
-
-```text
-openid
-profile
-email
-```
-
-and receives an **ID Token** containing claims about the authenticated subject.
-
-Simplified:
-
-```text
-User
- |
- | authenticates
- v
-OpenID Provider
- |
- +--> ID Token       -> identity information for client
- |
- +--> Access Token   -> authorization at API
-```
-
-Do not send an ID token to an API merely because it is a JWT.
-
-The API should receive an **access token intended for that API**.
-
-The OpenID Foundation describes OIDC as an OAuth-based identity framework in which an OpenID Provider authenticates the user and returns identity information, normally including an ID Token. citeturn0search9turn0search7
-
----
-
-# 3. Agent identity is multi-principal
-
-A useful enterprise model separates:
-
-```text
-User
-agent:client
-runtime workload
-```
-
-Example:
-
-```text
-user = alice
-logical agent = agent:travel-booking
-OAuth client = travel-agent-prod
-workload = spiffe://corp.example/prod/agent/travel
-```
-
-These should not be flattened into:
-
-```text
-sub = alice
-```
-
-and then forgotten.
-
-Audit needs to know both:
-
-```text
-who delegated
-AND
-which agent acted
-```
-
----
-
-# 4. OAuth client is not automatically a strong workload identity
-
-An OAuth `client_id` identifies a registered OAuth client.
-
-Example:
-
-```text
-client_id = travel-agent-prod
-```
-
-But client ID alone is public metadata.
-
-Proof may come from:
-
-```text
-client secret
-private_key_jwt
-mTLS
-workload federation
-SPIFFE
-platform identity
-```
-
-The OpenID Foundation's recent agent-identity work explicitly notes that OAuth client identifiers and MCP client registration alone are not equivalent to robust workload identity, and points to workload identity systems such as SPIFFE/SPIRE as complementary. citeturn0search37
-
----
-
-# 5. Access token
-
-An access token authorizes calls to a resource server.
-
-Conceptually:
-
-```json
-{
-  "iss": "https://id.example",
-  "sub": "user:alice",
-  "aud": "travel-api",
-  "scope": "trips:read trips:book",
-  "exp": 1787000000
-}
-```
-
-Possible additional actor information:
-
-```json
-{
-  "act": {
-    "sub": "agent:travel-booking"
-  }
-}
-```
-
-Exact claims depend on profile and issuer.
-
-Do not design authorization by assuming every provider uses identical JWT claims.
-
----
-
-# 6. ID token
-
-ID tokens are consumed by the OIDC client.
-
-Typical claims:
-
-```text
-iss
-sub
-aud
-exp
-iat
-nonce
-```
-
-The client validates:
-
-```text
-signature
-issuer
-audience
-expiration
-nonce where applicable
-```
-
-An ID token is not a generic API authorization credential.
-
----
-
-# 7. Refresh token
-
-Refresh tokens allow a client to obtain new access tokens.
-
-For agents they are especially sensitive because:
-
-```text
-access token = temporary authority
-refresh token = capability to mint more authority
-```
-
-Avoid exposing refresh tokens to:
-
-```text
-LLM context
-tool arguments
-logs
-memory stores
-prompt traces
-```
-
-Store and use them in a trusted token-management component.
-
----
-
-# 8. Scopes
-
-Scopes represent requested/issued authorization dimensions.
-
-Example:
-
-```text
-trips:read
-trips:book
-payments:create
-```
-
-Avoid:
-
-```text
-scope = admin
-```
-
-for ordinary agent workflows.
-
-Agent access should generally be:
-
-```text
-task-specific
-resource-specific
-short-lived
-```
-
-Scopes alone are often insufficient for object-level authorization.
-
-A scope:
-
-```text
-invoices:read
-```
-
-does not necessarily answer:
-
-```text
-which invoices?
-```
-
-That requires resource-level policy.
-
----
-
-# 9. Audience
-
-Audience constrains **where** a token is valid.
-
-```text
-aud = travel-api
-```
-
-A payment API should reject it.
-
-This prevents a major agent failure mode:
-
-```text
-Agent gets token for Service A
-       |
-       | forwards same token
-       v
-Service B
-       |
-       X reject wrong audience
-```
-
-Never accept arbitrary tokens merely because:
-
-```text
-signature is valid
-```
-
-Validate issuer **and audience**.
-
----
-
-# 10. Resource indicators
-
-OAuth resource indicators allow the client to identify the target protected resource.
-
-Conceptually:
-
-```text
-resource=https://api.example.com/travel
-```
-
-This helps authorization servers issue appropriately audience-restricted tokens.
-
-For agents with many tools:
-
-```text
-one token for every tool
-```
-
-is a dangerous default.
-
-Prefer:
-
-```text
-tool-specific / resource-specific tokens
-```
-
----
-
-# 11. Authorization Code + PKCE
-
-When an agent operates with user authorization through an interactive application, a modern pattern is:
-
-```text
-User
- |
- v
-Agent Client
- |
- | authorization request + PKCE challenge
- v
-Authorization Server
- |
- | user authenticates / consents
- v
-authorization code
- |
- | code + verifier
- v
-tokens
-```
-
-PKCE binds the authorization code to the client instance that initiated the flow.
-
-Avoid the old implicit grant.
-
----
-
-# 12. PKCE
-
-Client generates:
-
-```text
-code_verifier = random secret
-```
-
-then:
-
-```text
-code_challenge = BASE64URL(SHA256(code_verifier))
-```
-
-Authorization request sends:
-
-```text
-code_challenge
-code_challenge_method=S256
-```
-
-Token request sends:
-
-```text
-code_verifier
-```
-
-A stolen authorization code alone is therefore insufficient.
-
----
-
-# 13. Client Credentials
-
-For machine-to-machine access:
-
-```text
-Agent Workload
-      |
-      | authenticates as client
-      v
-Authorization Server
-      |
-      | access token
-      v
-Tool API
-```
-
-This is useful when:
-
-```text
-no human delegation exists
-agent acts under its own service authority
-```
-
-Example:
-
-```text
-inventory-monitor agent
-    ->
-inventory:read
-```
-
----
-
-# 14. Client Credentials is not user delegation
-
-Bad reasoning:
-
-```text
-client credentials token
-therefore agent is Alice
-```
-
-No.
-
-The subject/authority is the client/workload.
-
-Use a user-delegated flow when the operation must be performed under a user's authority.
-
-This distinction is fundamental for auditability.
-
----
-
-# 15. Agent acting for a user
-
-Suppose Alice asks:
-
-```text
-"Book the cheapest policy-compliant flight."
-```
-
-We want:
-
-```text
-Alice
-   |
-   | delegates
-   v
-Travel Agent
-   |
-   | acts within bounded authority
-   v
-Travel API
-```
-
-The API should be able to reason about:
-
-```text
-user = Alice
-agent = Travel Agent
-scope = booking:create
-resource = Alice's trip
-constraints = corporate policy
-```
-
-This is richer than impersonating Alice.
-
----
-
-# 16. Impersonation versus delegation
-
-### Impersonation
-
-Downstream sees:
-
-```text
-Alice
-```
-
-but may not know an agent acted.
-
-### Delegation
-
-Downstream can preserve:
-
-```text
-subject = Alice
-actor = Travel Agent
-```
-
-Delegation is generally more auditable for agent systems.
-
-A useful principle:
-
-> Do not erase the intermediary actor unless the protocol/use case truly requires impersonation.
-
----
-
-# 17. OAuth Token Exchange — RFC 8693
-
-OAuth Token Exchange defines an STS-like operation where one security token is exchanged for another.
-
-Conceptually:
-
-```text
-subject token
-      |
-      v
-Security Token Service
-      |
-      + actor token / policy
-      |
-      v
-new access token
-```
+- distinguish OAuth authorization, OIDC authentication, workload authentication, and resource authorization;
+- model resource owner, client, authorization server, OpenID Provider, and resource server roles;
+- keep the user subject, logical agent, OAuth client, and runtime workload distinct;
+- implement Authorization Code with PKCE, exact redirect/state/issuer validation, one-time code use, and OIDC nonce validation;
+- explain Client Credentials without inventing a human subject;
+- issue audience/resource-restricted, short-lived JWT access tokens using the RFC 9068 profile;
+- validate issuer-bound keys, type, audience, time, client, actor, workload, tenant, task, and scope;
+- attenuate authority at a token broker rather than trusting requested scopes;
+- bind a token to a DPoP key and reject wrong-key, wrong-method, wrong-URI, wrong-token, stale, and replayed proofs;
+- apply object/tenant/action authorization after token verification;
+- design MCP protected-resource discovery and bounded step-up behavior; and
+- compare mature libraries, platforms, high-security profiles, and emerging agent/workload work.
 
-Request uses:
+## Prerequisites and continuity
 
-```text
-grant_type =
-urn:ietf:params:oauth:grant-type:token-exchange
-```
-
-Common parameters include:
-
-```text
-subject_token
-subject_token_type
-actor_token
-actor_token_type
-resource
-audience
-scope
-requested_token_type
-```
-
-This is a foundational primitive for agent delegation.
-
----
-
-# 18. Subject token and actor token
-
-Think:
-
-```text
-subject_token -> on whose behalf?
-actor_token   -> which actor is acting?
-```
-
-Example:
-
-```text
-subject = Alice
-actor = Travel Agent
-```
-
-The STS can issue:
-
-```text
-token valid only for travel-api
-scope = booking:create
-TTL = 5 minutes
-```
-
-This is much safer than handing the agent Alice's broad original token.
-
----
-
-# 19. Downscoping during token exchange
-
-A token exchange should often reduce authority.
-
-Input:
-
-```text
-user token
-scopes:
-  profile
-  travel
-  expense
-  documents
-```
-
-Agent task:
-
-```text
-book trip
-```
-
-Output:
-
-```text
-aud = travel-api
-scope = trips:read trips:book
-TTL = 5m
-```
-
-Principle:
-
-```text
-derived authority <= source authority
-```
-
-and preferably:
-
-```text
-derived authority == task-required subset
-```
-
----
-
-# 20. Token broker architecture
-
-A mature agent should not perform arbitrary token manipulation inside LLM-generated code.
-
-Use:
-
-```text
-Agent
-  |
-  | authenticated workload identity
-  v
-Token Broker / STS
-  |
-  | policy
-  | delegation checks
-  | token exchange
-  v
-Tool-specific token
-```
-
-The broker becomes a control point for:
-
-```text
-scope
-audience
-TTL
-delegation
-approvals
-logging
-revocation
-```
-
----
-
-# 21. SPIFFE -> OAuth federation
-
-From Intermediate 01:
-
-```text
-spiffe://corp.example/prod/agent/travel
-```
-
-can authenticate the workload.
-
-Then:
-
-```text
-SPIFFE SVID
-    |
-    v
-STS / token broker
-    |
-    v
-OAuth access token
-```
-
-The OAuth token can be tailored for:
-
-```text
-SaaS API
-MCP server
-cloud API
-enterprise tool
-```
-
-This avoids storing an OAuth client secret in the agent container.
-
----
-
-# 22. DPoP — Demonstrating Proof of Possession
-
-Bearer token problem:
-
-```text
-steal token -> replay token
-```
-
-DPoP adds proof that the caller holds a private key associated with the token.
-
-Request:
-
-```text
-Authorization: DPoP <access-token>
-DPoP: <signed proof JWT>
-```
-
-The proof includes values such as:
-
-```text
-htm -> HTTP method
-htu -> HTTP URI
-iat
-jti
-```
-
-and is signed with the client's key.
-
-RFC 9449 standardizes DPoP for sender-constraining OAuth tokens.
-
----
-
-# 23. DPoP does not make theft irrelevant
-
-DPoP reduces usefulness of a stolen access token if the attacker does not possess the associated private key.
-
-But protect:
-
-```text
-DPoP private key
-proof replay
-nonce handling
-token binding validation
-```
-
-A token plus stolen key can still be dangerous.
-
----
-
-# 24. mTLS-bound access tokens
-
-OAuth mutual-TLS profiles can bind an access token to a client certificate.
-
-Conceptually:
-
-```text
-client certificate
-      |
-      v
-Authorization Server
-      |
-      v
-certificate-bound access token
-```
-
-At the API:
-
-```text
-token
-+
-TLS client certificate
-```
-
-must correspond.
-
-This is another sender-constrained token approach.
-
----
-
-# 25. SPIFFE and mTLS-bound OAuth
-
-An advanced architecture can combine:
-
-```text
-SPIFFE workload certificate
-       |
-       v
-OAuth authorization server / STS
-       |
-       v
-certificate-bound access token
-```
-
-Implementation support varies by platform, but the architectural goal is powerful:
-
-```text
-token cannot simply move to an unrelated workload
-```
-
----
-
-# 26. Sender-constrained tokens for agents
-
-Agents are good candidates for proof-of-possession because they:
-
-```text
-call many remote APIs
-operate unattended
-may process hostile content
-may be exposed to prompt injection
-```
-
-If a bearer token leaks into:
-
-```text
-trace
-prompt
-tool output
-log
-memory
-```
-
-it may be replayed.
-
-Sender-constrained tokens reduce that blast radius.
-
----
-
-# 27. Token lifetime
-
-Prefer short-lived agent access tokens.
-
-Example policy:
-
-```text
-read-only API       -> 15m
-sensitive write     -> 5m
-high-impact action  -> 1-2m + approval
-```
-
-These are example policies, not standards.
-
-The right lifetime depends on:
-
-```text
-risk
-revocation capability
-latency
-workflow duration
-offline requirements
-```
-
----
-
-# 28. Token caching
-
-Do not request a new token for every line of code.
-
-But do not cache forever.
-
-Token cache key should include relevant dimensions:
-
-```text
-subject
-actor
-issuer
-audience/resource
-scope
-proof key
-```
-
-Never accidentally reuse:
-
-```text
-Alice's travel token
-```
-
-for:
-
-```text
-Bob's request
-```
-
-Agent runtimes require careful principal-aware caches.
-
----
-
-# 29. Confused deputy
-
-Scenario:
-
-```text
-Attacker
-  |
-  | asks agent
-  v
-Privileged Agent
-  |
-  | uses its own broad token
-  v
-Sensitive API
-```
-
-The agent becomes a confused deputy.
-
-Mitigations:
-
-```text
-task-bound authorization
-user authority checks
-resource checks
-downscoped tokens
-audience restriction
-approval for high-impact calls
-actor preservation
-```
-
-Authentication alone does not solve this.
-
----
-
-# 30. Token forwarding
-
-Bad architecture:
-
-```text
-user token
-  |
-  v
-agent
-  |
-  v
-tool A
-  |
-  v
-tool B
-  |
-  v
-tool C
-```
+- [Authentication, Credentials and Tokens](../../beginner/03-authentication-credentials-tokens/)
+- [Authorization for Agents](../../beginner/04-authorization-for-agents/)
+- [Least-Privilege Tool Access](../../beginner/05-least-privilege-tool-access/)
+- [Workload Identity with SPIFFE and SPIRE](../01-workload-identity-spiffe-spire/)
+- HTTP, URI, JWT, public-key signatures, and basic web-application concepts
 
-The original token accumulates exposure.
+This topic teaches the secure client/resource-server boundary. [Intermediate 03](../03-token-exchange-delegation-impersonation/) goes deeper into RFC 8693, nested actors, attenuation across hops, delegation evidence, and impersonation.
 
-Prefer:
-
-```text
-user authority
-   |
-   v
-token broker
-   |
-   +--> token for A
-   +--> token for B
-   +--> token for C
-```
+## Scenario, success criteria, and non-goals
 
-Each:
+Alice asks Northstar's booking agent to book `trip:1042`. Four identities participate:
 
 ```text
-narrow audience
-narrow scope
-short TTL
+user subject   user:alice
+logical agent  agent:northstar:travel-booking
+OAuth client   client:northstar:travel-agent-ui
+workload       spiffe://corp.example/ns/travel/sa/booking-agent
 ```
-
----
 
-# 31. ID token forwarding is also wrong
+The system must authenticate Alice to the client, bind the transaction to the configured issuer/client/redirect/resource, prove the approved workload is the client, intersect user delegation with client/agent policy, issue a short-lived token for one API, bind high-risk use to a DPoP key, and independently authorize the target object.
 
-A common mistake:
+Success means all 25 labelled cases match their expected outcomes with zero invalid acceptance, valid-work block, authority amplification, replay acceptance, or cross-resource acceptance.
 
-```text
-agent receives ID token
-agent sends ID token to tool
-```
+The lab does not implement login UI, consent UX, WebAuthn, a general OAuth server, HTTP transport, TLS, full JOSE algorithm agility, PAR/JAR, refresh-token families, distributed replay storage, or RFC conformance. Those are production responsibilities described later.
 
-ID token:
+## 1. Mental model: authorization is a chain
 
-```text
-audience = OAuth/OIDC client
+```mermaid
+sequenceDiagram
+    participant U as Alice
+    participant C as Agent OAuth client
+    participant AS as Authorization server / OP
+    participant W as Attested agent workload
+    participant B as Token broker
+    participant RS as Travel API
+    U->>C: Start booking task
+    C->>AS: Authorization request + PKCE + state + nonce + resource
+    AS-->>C: Code + state + issuer
+    C->>AS: Code + verifier + exact redirect
+    AS-->>C: ID token for client + access token for API
+    W->>B: Verified workload + bounded delegated request
+    B-->>W: Short-lived audience/scope/task token
+    W->>RS: Access token + DPoP proof
+    RS->>RS: Verify token, proof, scope, tenant, object, action
+    RS-->>W: Allow or reason-coded deny
 ```
 
-Tool API:
+The central boundary is:
 
 ```text
-audience = resource server
+agent/model -> proposes resource, scopes, and action
+trusted application -> validates transaction and authenticated identities
+authorization server/broker -> derives narrower token authority
+resource server -> verifies token/proof and authorizes the exact object/action
 ```
-
-Use the correct token type for the correct recipient.
 
----
+Schema-valid requests, model text, client IDs, scopes, and signed tokens do not independently grant authority.
 
-# 32. MCP authorization
+## 2. OAuth, OIDC, and workload identity answer different questions
 
-Modern remote MCP authorization is based on OAuth.
+| Mechanism | Primary question | Consumer |
+| --- | --- | --- |
+| OAuth access token | What constrained API authority was granted? | resource server |
+| OIDC ID token | Who authenticated, for this client session? | OIDC client/relying party |
+| Workload credential | Which running code is presenting? | platform, AS, broker, or peer |
+| Application authorization | May this identity perform this action on this object now? | PEP/PDP/resource service |
 
-The current MCP ecosystem uses **Protected Resource Metadata** to tell clients which authorization servers protect an MCP resource. Servers return OAuth-style `401` responses and clients discover how to authorize. Current MCP guidance supports server-wide and per-tool authorization patterns. citeturn0search0
+OAuth does not define user authentication. OIDC adds an identity layer and ID Token for the client; this course's OIDC-specific simulator therefore requires the `openid` scope. An API must not accept an ID Token merely because it is a signed JWT. The normative starting points are [OAuth 2.0](https://www.rfc-editor.org/rfc/rfc6749.html), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), and the current [OAuth Security Best Current Practice](https://www.rfc-editor.org/rfc/rfc9700.html).
 
-The July 28, 2026 MCP specification also strengthened authorization behavior, including authorization-server issuer validation and a transition from Dynamic Client Registration toward Client ID Metadata Documents. citeturn0search1
+## 3. Roles and identity separation
 
----
+- **Resource owner:** authorizes access, often Alice.
+- **Client:** requests tokens and calls APIs; it is not the resource server.
+- **Authorization server (AS):** validates grants/client and issues tokens.
+- **OpenID Provider (OP):** AS that authenticates a user using OIDC.
+- **Resource server (RS):** accepts access tokens for its own resource URI.
+- **Logical agent:** governed actor operating within purpose/task constraints.
+- **Workload:** runtime instance cryptographically bound to the OAuth client.
 
-# 33. MCP Protected Resource Metadata
+`client_id` is a public identifier, not proof. Client authentication may use private-key JWT, mTLS, workload federation, platform identity, or—only where appropriate—a client secret. The agent name in a prompt is not client authentication.
 
-A protected MCP server can publish:
+## 4. Tokens and grants
 
-```text
-/.well-known/oauth-protected-resource
-```
+### Access token
 
-Metadata can identify:
+An access token represents authority for a resource server. It may be opaque (validated by introspection) or structured (commonly JWT). The [JWT Profile for OAuth access tokens](https://www.rfc-editor.org/rfc/rfc9068.html) standardizes an interoperable JWT shape, including `typ=at+jwt`. A JWT's readable claims are not verified authority until signature, issuer, audience, time, key lifecycle, and the selected profile are checked.
 
-```text
-resource
-authorization_servers
-scopes_supported
-```
+### ID token
 
-Client flow:
+The ID Token authenticates the subject to the OIDC client. Validate signature, issuer, audience, authorized party when applicable, time, and the transaction nonce. Do not send it to a resource API.
 
-```text
-MCP Client
-    |
-    | request
-    v
-MCP Server
-    |
-    | 401 + WWW-Authenticate
-    v
-discover protected resource metadata
-    |
-    v
-discover authorization server
-    |
-    v
-OAuth
-```
+### Refresh token
 
-This keeps resource and authorization-server roles clean.
+A refresh token lets a client request new access tokens. It is high-value durable credential material. Public clients should use rotation or sender constraint as required by policy; servers should detect family reuse, bind client/grant, support revocation, and limit inactivity/absolute lifetime. The local lab omits refresh tokens rather than teaching an incomplete family model.
 
----
+### Authorization grant
 
-# 34. MCP token audience
+A grant is the authorization used to obtain a token; it is not the access token itself. Authorization Code, Client Credentials, JWT assertions, device authorization, CIBA, and Token Exchange have different subjects and assurance properties.
 
-An MCP server must not accept a token intended for an unrelated service.
+## 5. Authorization Code with PKCE and OIDC
 
-Example:
+The client creates one transaction record before redirecting:
 
 ```text
-aud = github-api
+transaction ID
+expected issuer
+client ID
+exact redirect URI
+state digest
+nonce digest
+PKCE challenge
+requested resource
+requested scopes
+subject/task context
+expiry and consumed state
 ```
 
-must not be treated as:
+The response and token redemption enforce:
 
-```text
-aud = finance-mcp
-```
+1. exact transaction lookup and expiry;
+2. exact `state` comparison;
+3. authorization-response `iss` comparison where supported, preventing mix-up ([RFC 9207](https://www.rfc-editor.org/rfc/rfc9207.html));
+4. exact pre-registered redirect URI;
+5. S256 PKCE verifier binding ([RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html));
+6. code-to-transaction binding and single atomic consumption;
+7. authenticated client/workload binding at the token boundary;
+8. grant and resource/scope attenuation; and
+9. ID Token nonce, audience, issuer, authorized-party, and time validation.
 
-Token forwarding across MCP servers is a serious confused-deputy risk.
+PKCE does not replace state, exact redirects, issuer validation, TLS, client authentication where applicable, or OIDC nonce. State is correlated to a browser transaction; nonce is bound into the ID Token.
 
----
+## 6. Client Credentials
 
-# 35. MCP 2026 authorization changes
+Client Credentials represents the client acting on its own behalf. It does not mean “Alice,” even when the same workload sometimes handles Alice's tasks.
 
-As of the **2026-07-28 MCP specification**, authorization hardening includes:
+The lab's machine token uses:
 
 ```text
-RFC 9207 issuer validation
-credential isolation by issuer
-scope step-up behavior
-movement toward Client ID Metadata Documents (CIMD)
+sub       = client:northstar:travel-agent-ui
+client_id = client:northstar:travel-agent-ui
+scope     = inventory:read
 ```
-
-The new stateless core also exposes method/tool names in headers, which makes gateway-level routing and policy enforcement easier. citeturn0search1turn0search5
 
-This is highly relevant to enterprise agent identity because OAuth policy can increasingly be enforced at infrastructure boundaries rather than buried inside tool implementations.
+It contains no `act` user-delegation chain and no human task. A resource server must not infer a user from process memory, prompt text, or an unrelated session.
 
----
+## 7. Audience, resource, scopes, and object policy
 
-# 36. Per-tool authorization
+The OAuth `resource` parameter identifies the target protected resource during authorization/token requests ([RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html)). The resulting access token must be audience-restricted. A travel token forwarded to the payment API is rejected even if its scope text looks useful.
 
-Not every tool needs the same authority.
+Scopes are coarse delegated permissions, not complete object authorization:
 
-Example MCP server:
-
 ```text
-weather.search       -> public
-calendar.read        -> user auth
-calendar.create      -> elevated scope
-payment.execute      -> elevated scope + approval
+token has trips:read
+AND token subject belongs to resource tenant
+AND subject owns trip:1042
+AND action is allowed for current object state
+AND current application policy permits it
 ```
-
-Current MCP Apps guidance explicitly describes per-server and per-tool OAuth authorization patterns. citeturn0search0
 
-Agent architecture should support **step-up** rather than asking for maximum privilege at startup.
+For structured, transaction-specific rights, consider [Rich Authorization Requests](https://www.rfc-editor.org/rfc/rfc9396.html). Do not encode every object into an ever-growing scope vocabulary.
 
----
+## 8. Agent token broker and attenuation
 
-# 37. Incremental authorization
+Northstar's broker computes effective authority from trusted state:
 
-Bad:
-
 ```text
-agent startup:
-request every scope it might ever need
+requested scopes
+∩ registered client maximum
+∩ verified workload/client/agent binding
+∩ active user delegation
+∩ exact task
+∩ allowed resource
+= issued token authority
 ```
-
-Better:
 
-```text
-initial:
-docs:read
-
-later:
-calendar:read
+The request cannot supply workload or tenant identity. The broker rejects empty scope, arbitrary resources, task substitution, agent substitution, expired grants, inactive workloads, and request-ID reuse with changed content. It records an operation digest without logging the token.
 
-only when required:
-calendar:write
-```
+RFC 8693 Token Exchange can carry subject/actor semantics, but validating the input tokens, exchange policy, actor chain, resource, and attenuation is substantive work. This course establishes the boundary; Intermediate 03 implements it deeply.
 
-This reduces standing authority.
+## 9. Access-token validation
 
----
+The lab's resource server follows this order:
 
-# 38. Authorization is moving beyond scopes
+1. parse protected header and require the mutually exclusive access-token profile;
+2. allow only EdDSA and `typ=at+jwt`;
+3. select `kid` only from issuer-bound configured keys;
+4. reject unknown/revoked keys and verify signature;
+5. validate exact issuer and resource-server audience;
+6. require profile claims and validate current time and maximum lifetime;
+7. validate actor shape, client/workload/tenant/task fields used by policy;
+8. validate DPoP when `cnf.jkt` is present;
+9. require the action scope; then
+10. authorize tenant, subject ownership, object state, and action.
 
-OAuth gets a token to a resource server.
+Opaque tokens use introspection ([RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html)) instead of local JWT verification, but the RS still needs audience/resource, active state, client/subject, scope, and local authorization checks.
 
-The resource server still needs fine-grained policy.
+## 10. Sender constraint with DPoP and mTLS
 
-Example:
+Bearer-token theft enables replay. Sender constraint requires token possession plus a bound key.
 
-```text
-scope = payments:create
-```
+### DPoP
 
-does not answer:
+[RFC 9449](https://www.rfc-editor.org/rfc/rfc9449.html) binds access/refresh tokens to an application key. For each resource request, the lab verifies:
 
-```text
-may this agent pay vendor X?
-is amount <= $500?
-is user Alice allowed to approve?
-has human approval been satisfied?
-```
+- `typ=dpop+jwt`, asymmetric algorithm, and public JWK;
+- JWK thumbprint equals access-token `cnf.jkt`;
+- signature;
+- exact HTTP method (`htm`) and target URI (`htu`);
+- proof freshness (`iat`);
+- access-token hash (`ath`); and
+- one-time `(jkt, jti)` replay consumption.
 
-The OpenID Foundation's AuthZEN Authorization API became a final specification in January 2026, standardizing the interface between policy enforcement and policy decision systems. citeturn0search12
+The proof's embedded public key proves only that proof's signature; the access token's `cnf` creates authority binding. Trusting an arbitrary proof JWK without `cnf` repeats the original notebook's critical mistake.
 
-In 2026, AuthZEN also introduced agent-oriented drafts for access prerequisites/approvals and MCP tool authorization. citeturn0search3turn0search8
+Production deployments may also need AS/RS nonce handling, canonical URI rules, distributed replay storage, key protection/rotation, and authorization-code binding to the DPoP key.
 
-We cover this deeper in the authorization courses.
+### Mutual TLS
 
----
+[RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) supports OAuth client authentication and certificate-bound access tokens. mTLS integrates strongly with transport but can be harder through proxies and multi-tenant infrastructure. DPoP works at the application layer but adds proof/replay/nonce machinery. High-risk profiles such as FAPI 2.0 require sender-constrained access tokens.
 
-# 39. Dual identity in audit logs
+## 11. MCP authorization
 
-A strong event:
+The current MCP HTTP authorization specification uses OAuth, protected-resource metadata, authorization-server discovery, resource indicators, audience validation, and scope challenges. A protected MCP server is an OAuth resource server, not an authorization server by default.
 
-```json
-{
-  "user": "user:alice",
-  "agent": "agent:travel-booking",
-  "oauth_client": "travel-agent-prod",
-  "workload": "spiffe://corp.example/prod/agent/travel",
-  "audience": "travel-api",
-  "scope": ["trips:book"],
-  "action": "trip.create",
-  "resource": "trip:123",
-  "decision": "allow"
-}
-```
+Northstar validates:
 
-This enables:
+- exact HTTPS MCP resource URI;
+- a configured authorization-server issuer;
+- metadata/discovery before following endpoints;
+- resource parameter in authorization and token requests;
+- token audience for this MCP server; and
+- operation/tool authorization beyond scope.
 
-```text
-human accountability
-agent accountability
-runtime accountability
-authorization reconstruction
-```
+The [MCP 2026-07-28 authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) prioritizes Client ID Metadata Documents, retains Dynamic Client Registration for compatibility, and defines bounded scope challenge/step-up behavior. A client must cap reauthorization retries; a model cannot decide that a new scope is safe.
 
-Do not log raw bearer tokens.
+## 12. Architecture patterns
 
----
+| Pattern | Strengths | Risks and trade-offs | Best fit |
+| --- | --- | --- | --- |
+| Central enterprise AS/OP | consistent policy, lifecycle, federation, audit | dependency concentration and tenant configuration risk | most enterprises |
+| API gateway + external AS | centralized token enforcement and protocol translation | gateway can lose object/user context | mixed legacy APIs |
+| Token broker/STS | audience exchange and attenuation near workloads | high-value policy/signing service; confused-deputy risk | multi-resource agents |
+| Native service OAuth client | end-to-end client semantics and DPoP | library and key lifecycle in every service | security-sensitive clients |
+| Service mesh/workload federation to OAuth | avoids static client secrets | workload proof must map to registered client policy | cloud-native machine access |
+| Opaque access tokens | central revocation/introspection and minimal disclosure | network dependency, cache/freshness design | sensitive internal ecosystems |
+| JWT access tokens | offline verification and scale | revocation lag, key/profile drift, claim disclosure | distributed APIs with short TTLs |
 
-# 40. Revocation
+Do not add OAuth between processes merely because they are “agents.” For same-platform RPC already protected by managed workload identity and application policy, another token layer may add little value. OAuth is strongest at delegated/resource boundaries and cross-domain API ecosystems.
 
-Short token TTL reduces revocation dependence, but revocation still matters.
+## 13. Common tools and libraries
 
-Revoke:
+| Option | Role | Guidance |
+| --- | --- | --- |
+| Authlib | Python OAuth/OIDC client/server integrations and JOSE | strong Python teaching/production candidate; use framework adapters and provider metadata |
+| PyJWT + `cryptography` | focused JWT/JWK signing and validation | suitable for bounded profiles; application owns protocol/state policy |
+| OAuthlib / Requests-OAuthlib | mature Python OAuth client mechanics | useful for clients; not a complete identity platform |
+| Keycloak | open-source AS/OP and federation platform | strong self-hosted option; secure realms, clients, keys, and upgrades |
+| ORY Hydra | OAuth/OIDC server integrated with external login/consent | useful for composable platforms; you own surrounding identity UX/policy |
+| Microsoft Entra, Okta, Auth0 | managed enterprise AS/OP platforms | assess workload federation, token customization, policy, tenancy, logs, and portability |
+| `oauth4webapi` | standards-focused JavaScript OAuth/OIDC client | useful in browser/server JS; follow runtime-specific secure storage patterns |
+| OpenID conformance suites | protocol interoperability evidence | certification does not replace application authorization or deployment review |
 
-```text
-refresh token
-client credential
-delegation grant
-session
-proof key
-workload trust
-```
+Do not build a general authorization server from the lab. Use maintained providers and libraries, pin compatible versions, validate metadata/JWKS trust, and exercise failure paths.
 
-depending on the incident.
+## 14. State of the art (September 2026)
 
-Architecture should define:
+### Established standards
 
-```text
-how quickly does downstream authority disappear?
-```
+- OAuth 2.0 plus [Security BCP RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html);
+- Authorization Code with PKCE, exact redirects, issuer/mix-up defenses;
+- OIDC Core and Discovery;
+- JWT access-token profile, introspection, revocation, resource indicators, PAR, RAR;
+- DPoP or mTLS sender constraint where the threat model warrants it; and
+- final [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-security-profile-2_0-final.html) for high-security ecosystems.
 
----
+### Active standards work
 
-# 41. OAuth threat model for agents
+[OAuth 2.1 draft-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) consolidates modern OAuth guidance but remains an Internet-Draft, not a final RFC. Treat RFC 9700 and the referenced final RFCs as the stable authority today.
 
-Threats include:
+[OAuth SPIFFE Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) is an active OAuth Working Group draft profiling SPIFFE SVIDs for client authentication. It is promising for removing additional static client credentials but remains work in progress.
 
-```text
-token theft
-refresh-token theft
-redirect URI abuse
-authorization-code interception
-CSRF/state attacks
-issuer mix-up
-wrong audience
-overbroad scopes
-token forwarding
-confused deputy
-cross-user token cache leakage
-prompt-driven privilege escalation
-malicious MCP server
-malicious tool result
-stolen DPoP key
-```
+### Agent-oriented frontier
 
-Modern OAuth profiles solve some—not all—of these.
+Agent authorization has many competing 2026 drafts. The newly proposed [Workload Authorization Grant](https://datatracker.ietf.org/doc/html/draft-carleton-workload-authz-grant-01) targets platform-attested workloads obtaining third-party tokens without per-workload provisioning. Other drafts explore mission/task-bound authorization, transaction tokens, delegation chains, structured operation approval, and agent-native discovery. These are research/standards frontier inputs—not interchangeable production standards.
 
----
+Open problems include user consent that remains meaningful across autonomous replanning, authority accumulation across tools, privacy-preserving actor chains, durable task binding, revocation across derived tokens, client-instance identity, and evaluation that measures actual forbidden effects rather than token shape.
 
-# 42. State and nonce
+## 15. Worked Northstar trace
 
-For browser-based authorization:
+1. The client begins a transaction with exact redirect, issuer, resource, scopes, state digest, nonce digest, and S256 challenge.
+2. Alice authenticates; the AS returns a code, state, and issuer.
+3. The client validates state/issuer and atomically redeems the code using its verifier and exact redirect.
+4. Trusted middleware supplies the approved workload/client/agent binding.
+5. The active delegation binds Alice, agent, tenant, task, resources, scopes, and expiry.
+6. The AS returns an ID Token for the client and a short-lived access token for the travel API.
+7. For a high-risk operation, the token contains the client's `cnf.jkt`.
+8. The agent signs a request-specific DPoP proof containing method, URI, time, JTI, and access-token hash.
+9. The API validates token profile and proof, then checks that Alice owns `trip:1042` and `book` is allowed.
+10. The decision record contains identities, audience, scopes, action/resource, reason, versions, token digest, and evidence IDs—never credentials.
 
-```text
-state
-```
+## 16. Implementation and experiments
 
-helps correlate request/response and mitigate request-forgery classes of attack.
+[lab.py](lab.py) includes:
 
-OIDC:
+- deterministic Ed25519 issuer and issuer-bound key lifecycle;
+- one-time `AuthorizationServer` transaction/code store;
+- strict ID/access-token profiles;
+- `TokenBroker` authority intersection and idempotency conflict detection;
+- Client Credentials with machine-only subject semantics;
+- RFC 7638-style OKP JWK thumbprints and DPoP proof binding;
+- replay-safe `ResourceServer` validation and object authorization;
+- MCP protected-resource metadata trust checks; and
+- 25 labelled scenarios with baseline/control metrics.
 
-```text
-nonce
-```
+### Experiment A: transaction substitution
 
-binds an ID Token to the authentication request and mitigates replay/substitution scenarios.
+Change state, issuer, redirect, and PKCE verifier independently. Each fails for a distinct reason. Redeem the valid code concurrently; only one consumer succeeds.
 
-Use framework/library implementations rather than inventing these flows manually.
+### Experiment B: authority amplification
 
----
+Request `admin`, an undelegated MCP resource, another task, or another agent. The broker denies before signing. Then issue the allowed `payments:create` token for the exact task.
 
-# 43. Redirect URI security
+### Experiment C: audience versus object authorization
 
-Register precise redirect URIs.
+Forward a valid travel token to payments, then keep the correct audience but target Bob's trip. Audience stops cross-API replay; object authorization stops same-API horizontal access.
 
-Avoid overly permissive patterns.
+### Experiment D: DPoP proof attacks
 
-For local/native agent clients, current OAuth ecosystems have specialized patterns for loopback redirects and native apps.
+Run missing proof, arbitrary key, wrong method, wrong URI, wrong access-token hash, stale proof, and repeated JTI. Each demonstrates a separate sender-constraint invariant.
 
-Never accept:
+## 17. Evaluation
 
-```text
-redirect_uri = attacker-controlled URL
-```
+The dataset has 25 attempts: 2 expected valid and 23 expected blocked.
 
-without exact policy.
+| Metric | Population | Numerator | Direction |
+| --- | --- | --- | --- |
+| outcome accuracy | all 25 attempts | label matches | higher |
+| invalid acceptance | 23 blocked attempts | blocked cases allowed | zero |
+| valid work blocked | 2 valid attempts | valid cases denied | zero |
+| authority amplification | nine authority-negative cases | forbidden cases allowed | zero |
+| replay acceptance | five proof replay/substitution cases | replay cases allowed | zero |
+| cross-resource acceptance | audience/subject/tenant cases | boundary cases allowed | zero |
 
----
+The unsafe baseline decodes unverified claims and checks only a scope string. It accepts 19 invalid attempts, including every measured replay and cross-resource case. The hardened path matches all 25 labels. These are deterministic fixture results—not latency measurements, interoperability certification, or production-security proof.
 
-# 44. Client authentication
+Production evaluation also tracks authorization completion/abandonment, login and token endpoint latency percentiles, code replay, state/issuer/nonce failure rate, refresh-family reuse, invalid audience, JWKS staleness, introspection availability, DPoP replay/nonce challenges, step-up loops, policy-denial slices, token issuance volume, and revocation convergence.
 
-Confidential clients may authenticate using mechanisms such as:
+## 18. Failure modes and mitigations
 
-```text
-client secret
-private_key_jwt
-mTLS
-workload identity federation
-```
+| Failure | Impact | Control |
+| --- | --- | --- |
+| ID Token accepted at API | authentication assertion becomes API authority | mutually exclusive token profiles |
+| decode without verify | attacker-authored claims accepted | issuer-bound signature/profile validation |
+| arbitrary token `jku` | redirected trust and SSRF | configured metadata/JWKS only |
+| missing state/issuer | CSRF or AS mix-up | transaction-bound state and RFC 9207 issuer |
+| loose redirect matching | authorization code theft | exact pre-registration and equality |
+| reusable code | concurrent token issuance | atomic one-time consumption |
+| scope equals authorization | horizontal/object access | tenant/owner/action policy after token validation |
+| broker trusts request scope | privilege amplification | set intersection with trusted grants/policy |
+| client credentials means user | false attribution | machine client subject, no human implication |
+| access token logged | bearer/sender-bound credential leakage | digest and non-secret metadata only |
+| DPoP trusts proof JWK | attacker supplies own proof key | compare JWK thumbprint to token `cnf.jkt` |
+| no DPoP replay store | captured proof reused | atomic `(jkt,jti)` consumption and freshness |
+| token cache omits principal/resource/key | cross-user/resource reuse | complete cache key plus expiry/policy invalidation |
+| unlimited step-up retries | consent loops and scope accumulation | bounded attempts and trusted scope policy |
+| stale JWKS accepted forever | compromised key remains trusted | lifecycle-aware refresh and fail-safe expiry |
 
-For production agents, avoid embedding long-lived client secrets when platform/workload identity can replace them.
+## 19. Production upgrade path
 
----
+### Client and browser flow
 
-# 45. Private key JWT
+- use a maintained OAuth/OIDC library and validated provider metadata;
+- generate high-entropy state, nonce, verifier, code, and operation identifiers;
+- store transactions server-side or integrity/confidentiality protect them;
+- consume state/code atomically and expire abandoned transactions;
+- pre-register exact redirect URIs; prevent open redirects;
+- keep tokens out of URLs, logs, analytics, model context, and browser storage where possible;
+- use PAR/JAR/FAPI profiles for high-value ecosystems; and
+- design consent and step-up for the exact task rather than broad future autonomy.
 
-Instead of:
+### Authorization server and broker
 
-```text
-client_secret = static shared string
-```
+- protect signing keys using managed KMS/HSM and rotate with overlap;
+- authenticate clients using appropriate private-key, mTLS, attestation, or federation methods;
+- validate input grants/tokens before deriving authority;
+- enforce user/client/agent/workload/task/resource/scope intersection;
+- make operation IDs and code/refresh/proof consumption atomic;
+- propagate user, client, workload, grant, and policy revocation;
+- minimize claim disclosure; avoid sensitive prompts or chain-of-thought; and
+- separate Token Exchange support from arbitrary JWT wrapping.
 
-a client can sign a JWT assertion with a private key.
+### Resource servers
 
-This improves some properties but introduces:
+- bind metadata/JWKS to a configured issuer and cache with bounded freshness;
+- require one exact access-token profile and expected audience/resource;
+- validate algorithm, key lifecycle, issuer, time, lifetime, client, scope, and sender constraint;
+- use introspection safely for opaque tokens and fail closed according to risk policy;
+- perform object/tenant/action authorization after token validation;
+- implement DPoP replay/nonce handling in shared durable state where horizontally scaled; and
+- return 401 for invalid authentication and 403 for insufficient authority without leaking sensitive detail.
 
-```text
-private-key lifecycle
-JWKS management
-rotation
-```
+### Operations
 
-Workload federation can often remove even that application-managed key.
+- version client registrations, broker policy, scopes, resources, and token profiles;
+- monitor issuance, verification, denial reason, replay, cache, key, and revocation metrics;
+- rehearse signing-key compromise, issuer outage, introspection outage, and token theft;
+- bound retry and reauthorization loops;
+- test clock skew and multi-region consistency; and
+- use conformance suites plus application-level adversarial tests.
 
----
+## 20. Exercises and review
 
-# 46. OAuth and zero standing privilege
+1. Add an ID Token with multiple audiences and prove `azp` handling.
+2. Add DPoP nonce challenge/response while preventing nonce downgrade.
+3. Implement a token cache keyed by subject, actor, workload, audience, scopes, task, confirmation key, and policy version.
+4. Add refresh-token family rotation and concurrent reuse detection.
+5. Model an opaque-token introspection cache with bounded stale behavior.
+6. Add a RAR `authorization_details` object for one payment and enforce it at the API.
+7. Map the flow to Authlib and a real provider without bypassing the same invariants.
+8. Design an MCP insufficient-scope response and cap step-up attempts.
+9. Compare DPoP and mTLS for browser, server, and service-mesh clients.
+10. Explain why Token Exchange needs a separate deep implementation rather than wrapping claims into a new JWT.
 
-Combine:
+Review questions: Which token belongs at the API? What does PKCE protect, and what does it not? Why must issuer be stored with the transaction? How does Client Credentials affect attribution? Why is audience insufficient for object authorization? What creates DPoP authority binding? Which facts come from verified workload state? When should a broker refuse to issue any token?
 
-```text
-workload identity
-+
-token exchange
-+
-short TTL
-+
-narrow audience
-+
-narrow scope
-+
-step-up
-+
-resource policy
-```
+## 21. Summary
 
-to approach:
+- OAuth grants constrained API authority; OIDC authenticates a subject to the client.
+- User, agent, client, workload, task, tenant, and resource identities remain distinct.
+- Authorization transactions bind state, issuer, redirect, PKCE, nonce, resource, and one-time code state.
+- Token brokers derive narrower authority from trusted inputs; requested scopes are not authority.
+- Resource servers validate exact token profiles and independently authorize objects/actions.
+- DPoP requires token-key, request, access-token, time, and replay binding.
+- Current production practice is established; several agent-specific 2026 proposals remain drafts.
 
-```text
-zero standing agent privilege
-```
+## 22. Authoritative references
 
-The agent holds only the authority needed for its current task.
+### Core and security
 
----
+- [OAuth 2.0 — RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html)
+- [OAuth Security Best Current Practice — RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html)
+- [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
+- [OAuth 2.1 active draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)
+- [PKCE — RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html)
+- [Authorization Server Issuer Identification — RFC 9207](https://www.rfc-editor.org/rfc/rfc9207.html)
+- [OAuth Authorization Server Metadata — RFC 8414](https://www.rfc-editor.org/rfc/rfc8414.html)
+- [JWT Access Token Profile — RFC 9068](https://www.rfc-editor.org/rfc/rfc9068.html)
+- [Token Introspection — RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html)
+- [Token Revocation — RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html)
 
-# 47. Reference architecture
+### Resource and high-security profiles
 
-```text
-                   User
-                    |
-             Authorization Code
-                 + PKCE
-                    |
-                    v
-            Authorization Server
-                    |
-          user authority / consent
-                    |
-                    v
-Agent Registry --> Token Broker <--- SPIFFE Workload Identity
-                    |
-                    | token exchange
-                    |
-       +------------+-------------+
-       |            |             |
-       v            v             v
- Travel Token   Calendar Token  Payment Token
- aud=travel     aud=calendar    aud=payment
- 5 min          5 min           1 min
-       |            |             |
-       v            v             v
- Travel API    Calendar API   Payment Tool
-```
+- [Resource Indicators — RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html)
+- [Protected Resource Metadata — RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html)
+- [Rich Authorization Requests — RFC 9396](https://www.rfc-editor.org/rfc/rfc9396.html)
+- [Pushed Authorization Requests — RFC 9126](https://www.rfc-editor.org/rfc/rfc9126.html)
+- [JWT-Secured Authorization Request — RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html)
+- [DPoP — RFC 9449](https://www.rfc-editor.org/rfc/rfc9449.html)
+- [OAuth mTLS — RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html)
+- [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-security-profile-2_0-final.html)
 
-At each resource:
+### Agent, workload, and MCP boundary
 
-```text
-validate issuer
-validate audience
-validate expiry
-validate sender constraint if used
-extract subject + actor
-perform resource-level authorization
-```
+- [OAuth Token Exchange — RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html)
+- [OAuth SPIFFE Client Authentication draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/)
+- [Workload Authorization Grant draft](https://datatracker.ietf.org/doc/html/draft-carleton-workload-authz-grant-01)
+- [MCP 2026-07-28 Authorization](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
 
----
-
-# 48. Practical notebook
-
-The notebook implements a compact **OAuth Security Lab for Agents** using standard Python libraries and Authlib-style concepts.
-
-It covers:
-
-1. PKCE generation and verification;
-2. authorization-code state handling;
-3. access-token claim validation;
-4. audience enforcement;
-5. scope enforcement;
-6. client-credentials semantics;
-7. user + agent dual identity;
-8. RFC 8693 token-exchange request construction;
-9. downscoping;
-10. token broker policy;
-11. DPoP proof creation;
-12. DPoP proof validation;
-13. sender-constrained token modeling;
-14. token caching isolation;
-15. MCP Protected Resource Metadata;
-16. MCP 401 discovery flow;
-17. per-tool step-up authorization;
-18. confused-deputy tests;
-19. token-forwarding attacks;
-20. SPIFFE-to-OAuth federation design.
-
-The notebook deliberately separates **protocol learning** from a particular commercial identity provider so the concepts transfer to Entra ID, Keycloak, Auth0/Okta-style systems, cloud STSs and enterprise authorization servers.
-
----
-
-# 49. Production checklist
-
-## Client
-
-- Is this a user-delegated or workload-only flow?
-- Is PKCE used where appropriate?
-- Is client authentication strong?
-- Are redirect URIs exact?
-- Are tokens protected from LLM context?
-
-## Token
-
-- Correct issuer?
-- Correct audience?
-- Minimal scopes?
-- Short TTL?
-- Sender constrained where useful?
-- Actor preserved?
-- Resource-specific?
-
-## Resource server
-
-- Validate signature/issuer/audience/expiry.
-- Validate sender constraint.
-- Do not accept ID tokens as API tokens.
-- Do resource-level authorization.
-- Do not trust scopes as complete policy.
-
-## Delegation
-
-- Preserve subject and actor.
-- Downscope derived tokens.
-- Bind to task/resource where possible.
-- Prevent delegation chains from amplifying authority.
-
-## MCP
-
-- Publish Protected Resource Metadata.
-- Return standards-compliant 401 challenges.
-- Validate token audience.
-- Isolate credentials by issuer.
-- Support step-up scopes.
-- Never forward unrelated tokens.
-
-## Operations
-
-- Principal-aware token cache.
-- Refresh-token isolation.
-- Revocation path.
-- Audit subject + actor + workload.
-- Never log raw tokens.
-
----
-
-# 50. Key takeaways
-
-1. OAuth is primarily authorization; OIDC adds identity.
-2. Access tokens, ID tokens and refresh tokens have different recipients and purposes.
-3. An OAuth client ID is not sufficient workload proof.
-4. Client Credentials represents the client—not a human user.
-5. User-delegated agents should preserve both user and agent identity.
-6. RFC 8693 Token Exchange is a key primitive for bounded delegation.
-7. Derived tokens should normally be downscoped.
-8. Audience restriction is essential in multi-tool systems.
-9. DPoP and mTLS can sender-constrain tokens.
-10. SPIFFE can authenticate a workload that then obtains OAuth tokens from an STS.
-11. MCP authorization now has increasingly mature OAuth discovery and hardening patterns.
-12. OAuth scopes do not replace fine-grained resource authorization.
-13. Token brokers keep credential logic out of the LLM execution path.
-14. Agent systems should aim for short-lived, task-specific authority rather than standing privilege.
-
----
-
-# References
-
-- OAuth 2.0 Authorization Framework — RFC 6749  
-  https://www.rfc-editor.org/rfc/rfc6749
-- OAuth 2.0 Security Best Current Practice — RFC 9700  
-  https://www.rfc-editor.org/rfc/rfc9700
-- OAuth 2.0 Token Exchange — RFC 8693  
-  https://www.rfc-editor.org/rfc/rfc8693
-- OAuth 2.0 DPoP — RFC 9449  
-  https://www.rfc-editor.org/rfc/rfc9449
-- OAuth 2.0 Mutual-TLS — RFC 8705  
-  https://www.rfc-editor.org/rfc/rfc8705
-- OAuth Resource Indicators — RFC 8707  
-  https://www.rfc-editor.org/rfc/rfc8707
-- OAuth Protected Resource Metadata — RFC 9728  
-  https://www.rfc-editor.org/rfc/rfc9728
-- PKCE — RFC 7636  
-  https://www.rfc-editor.org/rfc/rfc7636
-- OpenID Connect Core  
-  https://openid.net/specs/openid-connect-core-1_0.html
-- OpenID Foundation — How OpenID Connect Works  
-  https://openid.net/developers/how-connect-works/
-- OpenID AuthZEN Authorization API 1.0  
-  https://openid.net/specs/authorization-api-1_0.html
-- OpenID AuthZEN agent-era authorization work  
-  https://openid.net/openid-foundation-advances-authorization-for-the-agent-era-with-new-authzen-working-group-drafts/
-- MCP Authorization  
-  https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
-- MCP 2026-07-28 release  
-  https://blog.modelcontextprotocol.io/posts/2026-07-28/
-- SPIFFE  
-  https://spiffe.io/
-
----
-
-# Next course
-
-## Intermediate 03 — Token Exchange, Delegation & Impersonation
-
-We will go deeper into:
+## Next course
 
-```text
-RFC 8693
-delegation chains
-subject vs actor
-act claims
-on-behalf-of
-impersonation
-downscoping
-task-bound tokens
-delegation depth
-cross-domain delegation
-token brokers
-STS design
-privilege amplification prevention
-delegation evidence
-```
+Continue to [Token Exchange, Delegation and Impersonation](../03-token-exchange-delegation-impersonation/) to implement multi-hop authority attenuation and actor-chain evidence.
