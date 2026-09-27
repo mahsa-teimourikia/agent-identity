@@ -14,7 +14,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | Beginner 06 — Agent Identity Lifecycle | Deep pass complete | Governed state transitions, exact approvals, attested provisioning, recertification, revocation, verified retirement |
 | Intermediate 01 — Workload Identity with SPIFFE & SPIRE | Deep pass complete | Attestation, unambiguous registration, SVID verification, full-state updates, rotation, federation |
 | Intermediate 02 — Agent Authentication with OAuth 2.0 & OIDC | Deep pass complete | Transaction binding, token profiles, broker attenuation, DPoP, resource authorization, MCP |
-| Intermediate 03 — Token Exchange, Delegation & Impersonation | Next | RFC 8693 input validation, actor chains, attenuation, replay, revocation |
+| Intermediate 03 — Token Exchange, Delegation & Impersonation | Deep pass complete | RFC 8693 profiles, actor chains, multidimensional attenuation, exact approval, idempotency, revocation |
+| Intermediate 04 — Fine-Grained Authorization with OPA, Cedar & OpenFGA | Next | Trusted authorization tuple, engine semantics, object policy, consistency, obligations |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -174,6 +175,26 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed 43-cell executed notebook covers transaction internals, token profiles, unsafe baseline, controlled evaluation, failure injection, broker attenuation, DPoP, MCP discovery, production mapping, and reflection exercises.
 - Learning Hub checkpoint tests cross-resource audience judgment; three additional questions cover DPoP binding, issuer mix-up, and Client Credentials attribution.
 - References distinguish final RFCs and FAPI 2.0 from the active OAuth 2.1, OAuth SPIFFE client-authentication, Workload Authorization Grant, and other agent-oriented draft work.
+
+## Intermediate 03 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| RFC 8693 token types are declarations plus validated credential profiles | README protocol mechanics and notebook request inspection | `TokenCodec.validate` plus exact grant, subject, actor, and requested-type checks | protocol/profile parametrized tests and ID-token substitution case |
+| Delegation preserves subject and makes the outer actor current | README `act` mechanics and notebook real child derivation | issuer-qualified `build_actor_claim` and bounded `actor_chain` | subject-continuity, nested-chain, malformed, cycle, and depth tests |
+| Every child must be derived from the actual parent and monotonically narrower | attenuation equation, worked trace, and notebook child experiment | broker intersection/subset checks across scope, audience, resource, action, amount, purpose, lifetime, and redelegation | six dimension-specific amplification tests plus child-claim assertions |
+| Client, caller workload, desired actor, and current presenter are independent bindings | README identity table and notebook principal inspection | `VerifiedCaller`, `ActorPolicy`, direct actor credential, and current-presenter checks | client/workload/tenant/actor/presenter substitution tests |
+| Impersonation is exceptional and loses consumer-visible actor attribution | README comparison and notebook delegation/impersonation experiment | legacy-only semantics plus exact `ApprovalStore` receipt and broker evidence | missing/altered/wrong-role/concurrent-replay tests |
+| Retry and lifecycle behavior are part of authorization safety | README replay/revocation sections and notebook failure injection | canonical operation ledger, family state, resource-side revocation, and sender binding | exact retry/conflict, existing-token revocation, and sender tests |
+| Security improvement needs labelled outcome and safety populations | README metric definitions and notebook baseline/control comparison | 33-case evaluator and explicit release gate | scope-only baseline accepts 28 invalid attempts; hardened path matches all 33 |
+
+## Intermediate 03 — validation record
+
+- Thirty-three deterministic scenarios: four expected valid and twenty-nine expected blocked across protocol, token profile, identity, authority, approval, replay, lifecycle, and sender boundaries.
+- Thirty-six focused test cases for request/response shape, subject/actor semantics, real multi-hop derivation, multidimensional attenuation, exact approval, concurrency, idempotency, revocation, sender/object authorization, key lifecycle, and evidence safety.
+- Lab-backed 37-cell executed notebook covers the RFC contract, unsafe baseline, controlled evaluation, failure slices, real child derivation, impersonation, retry, revocation, resource enforcement, evidence, technology comparison, production mapping, and exercises.
+- Learning Hub checkpoint tests current-actor semantics; three additional questions cover resource widening, impersonation controls, and changed-request retry conflict.
+- References distinguish final OAuth/JWT/RAR/sender-constraint standards and AuthZEN 1.0 from active Transaction Token, identity-chaining, delegated-refresh, actor-profile, and agent-chain drafts.
 
 ## Review sequence
 
