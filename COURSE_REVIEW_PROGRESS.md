@@ -12,7 +12,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | Beginner 04 — Authorization for Agents | Deep pass complete | Default deny, policy models, scoped delegation, approval receipts, PEP/PDP enforcement |
 | Beginner 05 — Least-Privilege Tool Access | Deep pass complete | Tool discovery/execution, typed contracts, credentials, egress, approval, budgets, verified effects |
 | Beginner 06 — Agent Identity Lifecycle | Deep pass complete | Governed state transitions, exact approvals, attested provisioning, recertification, revocation, verified retirement |
-| Intermediate 01 — Workload Identity with SPIFFE & SPIRE | Next | Trust domains, attestation, SVID lifecycle, Workload API, rotation, federation |
+| Intermediate 01 — Workload Identity with SPIFFE & SPIRE | Deep pass complete | Attestation, unambiguous registration, SVID verification, full-state updates, rotation, federation |
+| Intermediate 02 — Agent Authentication with OAuth 2.0 & OIDC | Next | OAuth roles and flows, OIDC, token exchange boundaries, sender constraint, verification |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -132,6 +133,26 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed notebook covering the unsafe baseline, governed controller, quantitative evaluation, approval, provisioning, concurrency, material change, revocation, cleanup failure, audit tampering, production mapping, and exercises.
 - Learning Hub checkpoint tests lifecycle architecture and failure recovery rather than state-name vocabulary.
 - Current references distinguish established SCIM/SPIFFE/Shared Signals practice, current product capabilities, the draft NIST agent-identity concept work, and final NIST IR 8587 token guidance.
+
+## Intermediate 01 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| A workload cannot choose its own SPIFFE ID | README trust pipeline and notebook issuance walkthrough | `ObservedWorkload`, `RegistrationEntry`, and `WorkloadAPI.fetch()` derive identity from trusted node/selectors | caller-requested-identity and request-field tests |
+| Attestation must resolve to exactly one active registration | README selector mechanics and selector-precision experiment | parent plus conjunctive selector matching with zero/multiple-match denial | unknown, incomplete, wrong-parent, collision, and endpoint-locality tests |
+| SVID verification is contextual, not signature-only | README X.509/JWT verification sequences and notebook failure matrix | `WorkloadGateway` enforces bundle/key, profile, time, lifetime, audience, exact peer, and lifecycle | X.509 and JWT invariant tests across nine negative cases |
+| Workload API removal state invalidates cached credentials | README streaming/redaction mechanics and notebook cache experiment | `WorkloadClientCache` replaces monotonic full-state snapshots | redaction, replayed-update, and partial-update tests |
+| Rotation requires verifier-ready bundle overlap | README rotation lifecycle and notebook old/overlap comparison | deterministic issuer generations and multi-root `TrustBundle` | old-only denial and overlap acceptance test |
+| Federation authenticates but does not authorize | README authorization boundary and federated experiment | partner bundle verification followed by exact `AccessRule` evaluation | federated identity authenticates but receives `resource_not_authorized` |
+| Security improvement requires labelled evidence | README metric definitions and notebook baseline/control comparison | 20-case evaluator with explicit denominators and release gate | baseline accepts 18 invalid attempts; hardened path matches all 20 |
+
+## Intermediate 01 — validation record
+
+- Twenty deterministic scenarios: two expected valid and eighteen expected blocked across attestation, selectors, endpoint locality, X.509/JWT verification, rotation, lifecycle, federation, and resource scope.
+- Twenty-four focused test cases, including eight malformed-identity variants, for syntax, issuance authority, registration ambiguity, SVID profiles, bundle rotation, full-state redaction, authorization, evidence safety, and metrics.
+- Lab-backed 42-cell executed notebook covering architecture, unsafe baseline, controlled path, X.509/JWT internals, failure injection, rotation, redaction, federation, evaluation, production mapping, and exercises.
+- Learning Hub checkpoint asks learners to diagnose ambiguous registration; three additional quiz questions cover federation, redaction, and bundle-rollout judgment.
+- References prioritize SPIFFE standards, current SPIRE documentation/releases, official Go/Java client guidance, maintained examples, and clearly label the Python package as community maintained.
 
 ## Review sequence
 
