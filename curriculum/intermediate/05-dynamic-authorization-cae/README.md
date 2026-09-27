@@ -1,1296 +1,479 @@
 # Intermediate 05 — Dynamic Authorization & Continuous Access Evaluation
 
-![Dynamic Authorization & Continuous Access Evaluation](images/dynamic-authorization-cae.png)
+> **Goal:** build and test a continuous-authorization control loop for a long-running agent: validate standards-conformant security event tokens, durably project subject-scoped state, bound stale authority with decision leases, re-authorize at every side effect, and prove behavior under duplicates, gaps, reordering, outages, and revocation races.
 
-> **Goal:** design authorization for long-running agents where permission can change *after* the initial token or policy decision.
+This course uses a realistic insurance workflow. Alice delegates a claims-adjuster agent to review one claim. The agent may wait for documents or approval and resume later. During that time, Alice's session, the task, the delegation, the approval, the workload, the claim, or the policy can change. A token that remains cryptographically valid is not evidence that the action is still authorized.
 
-A one-time authorization decision assumes the world stays unchanged:
-
-```text
-t0: ALLOW
-         |
-         |  agent runs for 40 minutes
-         |
-         v
-t40: still allowed?
-```
-
-For autonomous agents, that assumption is dangerous. During execution:
-
-```text
-task expires
-user is disabled
-agent is quarantined
-risk increases
-approval is revoked
-resource classification changes
-policy changes
-delegation is cancelled
-workload posture changes
-```
-
-Dynamic authorization therefore treats access as a **continuously maintained security state**, not a permanent consequence of an earlier `allow`.
-
----
+The practical lab is [`dynamic_authorization.ipynb`](dynamic_authorization.ipynb). Its reusable implementation is [`lab.py`](lab.py), with executable invariants in [`tests/test_dynamic_authorization.py`](tests/test_dynamic_authorization.py).
 
 ## Learning outcomes
 
-You will learn to:
-
-- distinguish token validity from current authorization;
-- identify stale-authorization windows;
-- design re-evaluation triggers;
-- implement time-, event-, risk-, resource- and context-driven authorization;
-- understand OpenID Shared Signals Framework (SSF);
-- understand the final OpenID Continuous Access Evaluation Profile (CAEP) 1.0;
-- model CAEP session-revoked, token-claims-change, credential-change, assurance-level-change and device-compliance-change events;
-- distinguish CAEP standards from vendor-specific CAE;
-- handle claims challenges and step-up;
-- revoke or attenuate active agent authority;
-- propagate policy and relationship changes;
-- secure long-running and asynchronous agents;
-- design authorization caches safely;
-- use event brokers without treating delivery as magically reliable;
-- prevent race conditions and TOCTOU authorization failures;
-- produce evidence for dynamic decisions.
-
----
-
-# 1. Why one-time authorization fails for agents
-
-Traditional API request:
+By the end, you can:
 
-```text
-request -> authorize -> execute -> response
-```
-
-may last milliseconds.
-
-Agent execution:
-
-```text
-request
- -> plan
- -> retrieve
- -> call agent B
- -> wait
- -> call tool
- -> request approval
- -> resume
- -> update record
- -> send message
-```
-
-may last minutes, hours or days.
-
-Authorization state can change between any two steps.
-
----
-
-# 2. Token validity != authorization validity
-
-Suppose an access token says:
-
-```text
-exp = 16:00
-scope = claim:update
-```
-
-At 15:20:
-
-```text
-Alice's role changes
-```
-
-At 15:21 the token may still be cryptographically valid.
-
-This creates a **stale authorization window**:
-
-```text
-policy change ---------------- token expiry
-       |<--- stale window --->|
-```
-
-Short token TTLs reduce the window but do not eliminate the architectural problem.
-
----
-
-# 3. Dynamic authorization model
-
-Think:
-
-```text
-ALLOW while conditions remain true
-```
-
-rather than:
-
-```text
-ALLOW forever because conditions were true at t0
-```
-
-Conceptually:
-
-```text
-effective_access(t) =
-identity(t)
-∩ delegation(t)
-∩ task(t)
-∩ resource_policy(t)
-∩ risk(t)
-∩ approval(t)
-∩ environment(t)
-```
-
----
-
-# 4. Re-evaluation triggers
-
-## Time-based
-
-```text
-task expiry
-token expiry
-approval expiry
-maximum autonomous execution interval
-```
-
-## Event-driven
-
-```text
-user disabled
-role changed
-agent quarantined
-delegation revoked
-policy deployed
-approval withdrawn
-credential rotated
-```
-
-## Risk-driven
-
-```text
-impossible travel
-new IP/network
-abnormal tool sequence
-prompt-injection detector
-high transaction amount
-behavior anomaly
-```
-
-## Resource-driven
-
-```text
-classification changed
-owner changed
-legal hold applied
-fraud hold applied
-case closed
-```
-
-## Context-driven
-
-```text
-device posture changed
-workload identity changed
-environment changed
-network zone changed
-```
-
----
-
-# 5. Continuous Access Evaluation
-
-Continuous Access Evaluation (CAE) is the general architectural idea that access can be reconsidered when relevant security conditions change.
-
-The standards-based cross-provider mechanism is **OpenID Continuous Access Evaluation Profile (CAEP)**, built on the **OpenID Shared Signals Framework (SSF)**.
-
-CAEP 1.0 became an OpenID Final Specification in August 2025.
-
-It is explicitly designed so cooperating transmitters can send continuous updates that receivers use to attenuate access for human **or robotic** users, devices, sessions and applications.
-
----
-
-# 6. Shared Signals Framework
-
-SSF defines infrastructure for exchanging security signals.
-
-```text
-Signal source / Transmitter
-           |
-           | Security Event Token
-           v
-       Event Stream
-           |
-           v
-Receiver / Relying Service
-           |
-           v
-security response
-```
-
-Examples of signal sources:
-
-```text
-identity provider
-endpoint security
-risk engine
-agent registry
-authorization service
-SOC platform
-```
-
-Examples of receivers:
-
-```text
-API gateway
-agent runtime
-token broker
-MCP server
-session service
-authorization PDP
-```
-
----
-
-# 7. Security Event Tokens
-
-SSF uses Security Event Tokens (SETs), based on RFC 8417.
-
-A SET represents a security event, not an access token.
-
-Conceptually:
-
-```json
-{
-  "iss":"https://id.example",
-  "aud":"https://agent-platform.example",
-  "iat":1770000000,
-  "jti":"event-123",
-  "events":{
-    "...event-type...":{
-      "...":"..."
-    }
-  }
-}
-```
-
-Do not use security event payloads as authorization credentials.
-
-They are inputs that can cause authorization state to change.
-
----
-
-# 8. CAEP event types
-
-CAEP 1.0 defines security events including:
-
-```text
-Session Revoked
-Token Claims Change
-Credential Change
-Assurance Level Change
-Device Compliance Change
-```
-
-These events let a receiver respond before simply waiting for a token/session to expire.
-
----
-
-# 9. Session revoked
-
-Agent analogy:
-
-```text
-user session revoked
-delegation session revoked
-agent session revoked
-```
-
-Receiver action might be:
-
-```text
-mark session inactive
-reject next action
-cancel queued privileged operations
-invalidate authorization cache
-terminate tool session
-```
-
-A revocation event should change enforcement state.
-
-Logging it without enforcement is not continuous authorization.
-
----
-
-# 10. Token claims change
-
-Suppose an agent's authority was derived from:
-
-```text
-department = claims
-role = senior-adjuster
-```
-
-Then the source claims change.
-
-Possible response:
-
-```text
-invalidate cached decisions
-force token refresh
-recompute task authority
-reduce active permissions
-```
-
----
-
-# 11. Credential change
-
-A credential event can indicate that authentication material changed.
-
-For agent systems, also consider equivalent platform events:
-
-```text
-workload key rotated
-SPIFFE identity changed
-service account disabled
-certificate revoked
-agent registration suspended
-```
-
-Not every agent-specific event is a standardized CAEP event. Build an enterprise event taxonomy while keeping standards and custom events clearly distinguished.
-
----
-
-# 12. Assurance-level change
-
-An operation may require:
-
-```text
-AAL / authentication assurance
-workload assurance
-human approval assurance
-```
-
-If assurance drops, the runtime can:
-
-```text
-continue read-only
-reduce scope
-require step-up
-pause
-terminate
-```
-
-Dynamic authorization need not be binary.
-
----
-
-# 13. Device compliance change
-
-CAEP includes device compliance change.
-
-For human+agent systems this can influence delegated authority:
-
-```text
-Alice's managed device becomes noncompliant
-      |
-      v
-delegated session risk changes
-      |
-      v
-agent loses sensitive action authority
-```
-
-For machine actors, analogous workload posture may come from other security systems.
-
----
-
-# 14. CAEP vs Microsoft Entra CAE
-
-Do not conflate:
-
-```text
-OpenID CAEP
-```
-
-with:
-
-```text
-Microsoft Entra Continuous Access Evaluation
-```
-
-Microsoft Entra CAE is a concrete vendor implementation for supported applications/resources. It can react to events such as user disablement, password reset, explicit refresh-token revocation and elevated user risk; CAE-enabled resources can also enforce location-based Conditional Access.
-
-Microsoft's developer flow uses claims challenges: a CAE-aware resource can reject a token and return a `401` plus `WWW-Authenticate` claims challenge, which the client uses to obtain a token satisfying the new conditions.
-
-That is an important production pattern, but not the entirety of the CAEP standard.
-
----
-
-# 15. Claims challenge
-
-Flow:
-
-```text
-Agent client
-    |
-    | token
-    v
-Resource API
-    |
-    | conditions no longer sufficient
-    v
-401 + claims challenge
-    |
-    v
-Identity / authorization service
-    |
-    | re-evaluate / step-up
-    v
-new token or deny
-```
-
-Never blindly retry the same rejected token forever.
-
----
+- distinguish credential validity, relationship authority, and current contextual authorization;
+- explain SSF, CAEP, Security Event Tokens (SETs), and push/poll delivery roles;
+- validate a signed SET's algorithm, key, issuer, audience, media type, required claims, subject identifier, event type, and freshness;
+- persist an authenticated event before acknowledging it and process it asynchronously and idempotently;
+- scope events to the correct subject and order independent signal domains without dropping late revocations;
+- define safe cache keys and short decision leases that bind exact proposals and trusted state versions;
+- re-authorize at tool execution, commit, retry, and resume boundaries;
+- combine OpenFGA relationship checks with OPA contextual policy;
+- choose explicit fail-closed and degraded-mode behavior for stream or policy outages;
+- measure receive-to-enforcement latency with lifecycle timestamps; and
+- operate release gates for invalid acceptance, valid-work blockage, and propagation SLOs.
 
-# 16. Step-up authorization
+## Prerequisites and time
 
-Dynamic response can be:
+You should already understand JWT validation, OAuth audiences and scopes, delegated tasks, policy enforcement points, and fine-grained authorization. Complete Intermediate 03 and 04 first.
 
-```text
-ALLOW
-DENY
-STEP_UP
-REDUCE
-PAUSE
-REVOKE
-```
-
-Example:
-
-```text
-payment <= $100
-  -> autonomous
-
-$100 < payment <= $1000
-  -> human approval
-
-payment > $1000
-  -> deny agent
-```
-
-Risk may dynamically change these thresholds.
-
----
-
-# 17. Agent step-up
-
-Step-up need not always mean MFA.
-
-For agents it can mean:
-
-```text
-human approval
-stronger user authentication
-fresh delegated token
-fresh workload attestation
-manager approval
-second agent verification
-policy exception approval
-more constrained tool
-```
-
----
-
-# 18. Long-running task lease
-
-Instead of authorizing a 4-hour workflow once, issue a short task lease:
-
-```text
-task = claim:483
-lease = 5 minutes
-```
-
-Before a privileged step:
-
-```text
-lease valid?
-task active?
-delegation active?
-policy unchanged?
-risk acceptable?
-```
-
-If not, re-evaluate.
-
----
-
-# 19. Checkpoints
-
-Not every token of model generation requires a PDP call.
-
-Define security checkpoints:
-
-```text
-before tool selection
-before privileged tool
-before resource read
-before side effect
-after human approval
-after long wait
-before external delegation
-before commit
-```
-
-The higher the impact, the fresher the decision should be.
-
----
-
-# 20. Time-of-check/time-of-use
-
-Classic TOCTOU:
-
-```text
-10:00 authorize transfer
-10:01 approval revoked
-10:02 execute transfer
-```
-
-The authorization was valid when checked, but stale at execution.
-
-Mitigations:
-
-```text
-check close to side effect
-short decision leases
-transaction-bound approvals
-atomic policy/resource operations
-version assertions
-idempotency
-```
-
----
-
-# 21. Resource version binding
-
-Suppose authorization was evaluated against:
-
-```text
-invoice version = 17
-amount = 300
-```
-
-Before execution the invoice changes:
-
-```text
-version = 18
-amount = 3000
-```
-
-Bind high-impact authorization to:
-
-```text
-resource version
-parameters
-approval
-```
-
-Then require the execution target to still match.
-
----
-
-# 22. Approval version binding
-
-Bad:
-
-```text
-approval = true
-```
-
-Better:
-
-```json
-{
-  "approval_id":"apr:82",
-  "action":"payment.create",
-  "resource":"invoice:927",
-  "amount":300,
-  "version":17,
-  "expires_at":"..."
-}
-```
-
-If parameters change, approval is no longer valid.
-
----
-
-# 23. Dynamic relationship changes
-
-With ReBAC:
-
-```text
-agent A viewer document 42
-```
-
-can disappear while a task is running.
-
-Your architecture must define how quickly:
-
-```text
-relationship mutation
-```
-
-becomes:
-
-```text
-enforcement change
-```
-
-Caching is part of the security model.
+Allow 3–4 hours:
 
----
+| Part | Time | Deliverable |
+|---|---:|---|
+| Concepts and threat model | 45 min | trust-boundary sketch |
+| SET receiver and projection | 60 min | durable, idempotent event path |
+| PEP, leases, cache, policy engines | 60 min | current-state enforcement |
+| Failure injection and release gate | 45 min | evidence and metrics |
 
-# 24. Policy deployment events
-
-Policy version:
-
-```text
-payments-v17
-```
+## 1. The core problem: authority changes during execution
 
-changes to:
+A conventional request often completes quickly:
 
 ```text
-payments-v18
+authenticate -> authorize -> execute -> respond
 ```
-
-A running agent may hold a cached allow from v17.
 
-Options:
+An agent may instead:
 
 ```text
-invalidate all affected cache entries
-re-evaluate on next sensitive action
-push policy-change event
-version-check decisions
+authenticate -> plan -> retrieve -> wait -> request approval
+             -> resume -> call another agent -> invoke tool -> commit
 ```
 
----
+Between those steps:
 
-# 25. Decision leases
+- the human account can be disabled;
+- token claims or assurance can change;
+- a device can become noncompliant;
+- the agent workload can be quarantined;
+- a task, delegation, or approval can be revoked;
+- a relationship can be removed;
+- a claim can change tenant, owner, status, or classification;
+- policy can be replaced; or
+- a risk engine can raise the subject or operation risk.
 
-Instead of caching:
+The correct model is not “allowed once, therefore allowed forever.” It is:
 
 ```text
-ALLOW
+effective_authority(t) =
+  authenticated_identity(t)
+  ∩ current_claims(t)
+  ∩ active_delegation(t)
+  ∩ active_task(t)
+  ∩ relationship_authority(t)
+  ∩ resource_state(t)
+  ∩ current_policy(t)
+  ∩ risk_and_posture(t)
+  ∩ exact_approval(t)
 ```
-
-cache:
-
-```json
-{
-  "allow":true,
-  "valid_until":"14:05:00Z",
-  "policy_version":"payments-v18",
-  "resource_version":17,
-  "risk_bucket":"low"
-}
-```
-
-The decision is a lease with assumptions.
 
----
+Token expiry is only one bound. A ten-minute token still creates up to ten minutes of stale authority if revocation is checked only at expiry.
 
-# 26. Cache key design
+## 2. Architecture and trust boundaries
 
-Unsafe:
-
-```text
-cache[action] = allow
-```
-
-Safer key includes relevant dimensions:
-
 ```text
-subject
-actor
-task
-action
-resource
-resource version
-policy version
-risk state
-approval
-delegation family
+identity/risk/task/policy sources
+              |
+              v
+       SSF transmitter
+              |
+      signed SET over TLS
+              |
+              v
+  receiver: authenticate + profile validate
+              |
+       durable inbox  ----> 202 Accepted
+              |
+       async projector
+              |
+              v
+  subject-scoped authorization projection
+              |
+              +------> OPA contextual decision
+              +------> OpenFGA relationship check
+              |
+              v
+   PEP at tool/resource boundary
+       re-check before effect
 ```
 
-If a dimension can change the decision, omitting it can create authorization bugs.
+The model proposes an action. It does not supply identity, tenant, current policy version, relationships, risk, or approval validity. Trusted application components derive those facts.
 
----
+Trust boundaries:
 
-# 27. Cache invalidation
+1. **Transmitter configuration:** issuer, keys, audience, stream, and allowed event types are administrative trust, not token-controlled discovery.
+2. **Receiver:** rejects unauthenticated or profile-invalid SETs before storage or state mutation.
+3. **Inbox:** provides durable deduplication and separates protocol acknowledgement from business processing.
+4. **Projector:** resolves `sub_id`, applies domain-specific ordering, and records gaps.
+5. **PDPs:** decide from verified current facts but do not perform effects.
+6. **PEP:** fulfills obligations, consumes approval, controls idempotency, and commits the side effect.
 
-Invalidate when:
+## 3. Standards landscape
 
-```text
-policy changes
-relationship changes
-task ends
-delegation revoked
-approval revoked
-resource changes
-risk crosses threshold
-agent quarantined
-user disabled
-```
+### Security Event Token
 
-Event-driven invalidation plus short leases is a practical combination.
+[RFC 8417](https://www.rfc-editor.org/rfc/rfc8417) defines a SET as a JWT carrying security event information. A valid JWT signature is necessary but insufficient: the receiver must also apply the expected SET profile and trust configuration.
 
----
+### Shared Signals Framework 1.0
 
-# 28. Event ordering
+[OpenID Shared Signals Framework 1.0 Final](https://openid.net/specs/openid-sharedsignals-framework-1_0-final.html) defines transmitter/receiver configuration, streams, subject identifiers, verification, and delivery. Important profile points used in this lab include:
 
-Distributed events may arrive:
+- explicit JOSE `typ` of `secevent+jwt`;
+- top-level `sub_id` rather than top-level `sub`;
+- no `exp` claim in an SSF SET;
+- normally one event member in `events`;
+- a unique `jti` for SET deduplication; and
+- `txn` for correlation with the underlying event.
 
-```text
-late
-duplicated
-out of order
-```
+Subject identifiers follow [RFC 9493](https://www.rfc-editor.org/rfc/rfc9493). The lab uses the `iss_sub` format and checks its issuer before selecting projection state.
 
-Example:
+### Continuous Access Evaluation Profile 1.0
 
-```text
-E1 risk high
-E2 risk low
-```
+[OpenID CAEP 1.0 Final](https://openid.net/specs/openid-caep-1_0-final.html) defines interoperable security events that let receivers attenuate access for human or robotic users, devices, sessions, and applications. It became an OpenID Final Specification in August 2025.
 
-Receiver sees:
+The lab exercises these CAEP event types:
 
-```text
-E2
-E1
-```
+- `session-revoked`;
+- `token-claims-change`;
+- `risk-level-change`; and
+- `device-compliance-change`.
 
-and incorrectly moves backward.
+It also uses clearly namespaced internal events for task, policy, resource, approval, delegation, and workload changes. These are application events, not invented CAEP standards.
 
-Track:
+The [CAEP interoperability profile](https://openid.net/specs/openid-caep-interoperability-profile-1_0.html) is a separate draft profile. Do not describe draft interoperability requirements as part of CAEP 1.0 Final.
 
-```text
-event timestamp
-event ID
-source
-subject
-sequence/version where available
-```
+### Push and poll delivery
 
-and design monotonic security state where possible.
+[RFC 8935](https://www.rfc-editor.org/rfc/rfc8935) defines push-based SET delivery. A receiver validates the SET, persists it, and can return HTTP 202 before asynchronous processing. Retransmission is expected, so duplicate delivery must have a consistent result.
 
----
+[RFC 8936](https://www.rfc-editor.org/rfc/rfc8936) defines poll-based delivery. Polling can suit receivers that cannot expose an inbound endpoint, but the same authentication, idempotency, ordering, and freshness requirements remain.
 
-# 29. Duplicate events
+### Vendor CAE is not the protocol itself
 
-Event handlers should be idempotent.
+Microsoft Entra Continuous Access Evaluation combines critical-event evaluation with Conditional Access location-policy evaluation and may return a claims challenge. That is a valuable production example, but its claims challenge and operational behavior are vendor-specific. Use the vendor documentation rather than assuming every CAEP receiver behaves the same way.
 
-```text
-session-revoked event received twice
-```
+## 4. Receiver validation pipeline
 
-must not cause corruption.
+The lab's `SecurityEventInbox.receive()` performs this order:
 
-Keep processed event IDs or use state transitions that are naturally idempotent.
+1. require an enabled, preconfigured stream;
+2. parse the protected header without trusting it;
+3. require `typ=secevent+jwt` and an allowed algorithm;
+4. select a key only from the configured issuer-bound key set;
+5. verify signature, issuer, and audience;
+6. require `iss`, `aud`, `iat`, `jti`, `sub_id`, and `events`;
+7. reject forbidden `sub` and `exp` profile claims;
+8. enforce a deterministic event-time acceptance window;
+9. require exactly one recognized event type;
+10. validate the `iss_sub` subject identifier and event sequence;
+11. insert the event into a durable SQLite inbox under unique `jti`; then
+12. return HTTP 202 semantics.
 
----
+Do not fetch a verification key from an arbitrary `jku` or `x5u` header. Do not decode without verifying. Do not mutate authorization state and then attempt persistence. Do not return a permanent failure for a valid retransmission whose `jti` was already stored.
 
-# 30. Event delivery failure
+The sample uses Ed25519/EdDSA through `cryptography` and PyJWT. Production deployments usually use an issuer metadata and JWKS lifecycle with controlled refresh, key overlap, and alerts for unknown key IDs.
 
-Do not assume:
+## 5. Durable projection and event semantics
 
-```text
-event bus exists -> revocation guaranteed
-```
+Delivery is at least once, not exactly once. The inbox makes `jti` the deduplication key. Processing has a separate status, so a process restart can resume an acknowledged but unprojected event.
 
-Plan for:
+### Subject scoping
 
-```text
-receiver offline
-network partition
-stream misconfiguration
-expired subscription
-invalid signature
-queue backlog
-```
+An event for `user:mallory` must never revoke `user:alice`. The projector resolves the verified `sub_id` and selects that subject's state. A global “current session” variable is not safe in a multi-tenant service.
 
-Defense in depth:
+### Ordering is per domain
 
-```text
-events
-+
-short leases
-+
-fresh checks at critical boundaries
-```
+A single timestamp or cursor across every event type is incorrect. A newer low-risk observation must not suppress an older but previously unseen session revocation. The lab therefore keeps independent cursors for session, claims, risk, device, task, policy, resource, approval, delegation, and workload domains.
 
----
+### Restriction before relaxation
 
-# 31. Fail-safe behavior
+The sample follows a conservative rule:
 
-If authorization freshness cannot be established:
+- a late restrictive signal can still attenuate authority;
+- a stale relaxation is ignored; and
+- a sequence gap marks the stream not fresh.
 
-```text
-read public FAQ -> maybe degraded mode
-wire transfer -> deny/pause
-delete account -> deny
-send regulated data -> deny
-```
+This is a teaching policy, not a universal protocol rule. In production, define the authoritative version or ordering field for each source, how snapshots repair gaps, and who may issue a relaxation. Timestamp order alone is vulnerable to clock skew and delayed delivery.
 
-Define per-action freshness requirements.
+The lab's `sequence` member is a Northstar source extension used to teach ordering and gap repair; CAEP does not define that member as a universal event-ordering mechanism.
 
----
+### Gaps and reconciliation
 
-# 32. Risk-based authorization
+If sequence 3 arrives after sequence 0, the projector applies a restrictive change but marks the stream stale. Sensitive writes fail closed until a snapshot or replay repairs the gap. The course permits a specifically defined claim read during degraded mode. This exception is policy, not a default recommendation.
 
-Risk is not just a dashboard score.
+## 6. Decision leases, caches, and stale authority
 
-Example:
+A cache entry is a short lease over an exact decision, not a cached role name. Its key binds:
 
-```text
-risk < 30 -> allow
-30-60 -> reduce authority
-60-80 -> human approval
->80 -> revoke/pause
-```
+- subject, agent, workload, and tenant;
+- action, resource, purpose, amount, and operation ID;
+- the projection fingerprint;
+- policy, resource, relationship, approval, and delegation versions; and
+- a `valid_until` bounded by credential, task, and policy limits.
 
-Risk signals might include:
+The notebook demonstrates the classic bug:
 
-```text
-identity risk
-workload risk
-tool-call anomaly
-prompt-injection signal
-data sensitivity
-transaction value
-network posture
-behavior deviation
+```python
+def vulnerable_cache_key(proposal):
+    return f"{proposal.action}:{proposal.resource_id}"
 ```
 
----
+That key treats a payment of CAD 300 and CAD 900 as the same request. The corrected key hashes the complete canonical proposal and current trusted state.
 
-# 33. Prompt injection as a dynamic signal
+Cache invalidation should be driven by versioned state. Deleting process-local keys in response to an event is useful but insufficient: another instance may retain an entry, and a restart may recover it. A version mismatch makes the stale item unusable everywhere.
 
-Suppose a detector changes:
+## 7. Re-authorization boundaries
 
-```text
-prompt_injection_risk:
-0.1 -> 0.91
-```
+Re-evaluate when:
 
-Do not merely append:
+- a tool call is about to cross the trust boundary;
+- an action changes from read to write;
+- the target resource or parameters change;
+- a workflow resumes after a wait;
+- a retry follows an unknown outcome;
+- an approval arrives or is replaced;
+- a policy, relationship, task, or delegation version changes; or
+- a side effect is about to commit.
 
-```text
-"be careful"
-```
+The lab's PEP deliberately does not execute from the first decision. It obtains an initial decision, permits a simulated mid-flight event, reads current state, and makes a final decision immediately before the effect. This closes the demonstrated time-of-check/time-of-use revocation race.
 
-Policy response can be:
+No distributed system can make the stale window literally zero. Define and measure the bound:
 
 ```text
-remove write tools
-block external communication
-restrict retrieval
-require human review
+event created -> received -> validated -> persisted -> projected -> enforced
 ```
 
-This converts AI security telemetry into enforceable authorization state.
+For high-impact operations, also use downstream controls such as idempotency keys, transaction limits, reversible staging, and reconciliation.
 
----
+## 8. Exact approvals and operation idempotency
 
-# 34. Agent quarantine
+A payment approval binds the canonical proposal digest, subject, agent, task, policy version, approval version, and expiry. Changing the amount or operation ID changes the digest and invalidates the receipt.
 
-Agent registry:
+The PEP consumes an approval only after the final authorization decision. It binds an operation ID to the proposal digest:
 
-```text
-agent:claims
-status = active
-```
-
-Security system detects compromise:
-
-```text
-status = quarantined
-```
+- exact retry returns the prior result;
+- changed retry with the same operation ID is a conflict; and
+- a lost response is reconciled before another effect is attempted.
 
-Consequences:
+Continuous authorization does not replace transactional safety. It decides whether an effect may occur now; idempotency and reconciliation decide whether it has already occurred.
 
-```text
-deny new token exchange
-revoke active task leases
-invalidate PDP cache
-terminate MCP sessions
-stop redelegation
-pause queued actions
-```
+## 9. OPA and OpenFGA integration
 
----
+The lab demonstrates a two-plane decision:
 
-# 35. Kill switch vs graceful attenuation
+1. OpenFGA answers whether the agent is both assigned and delegated to a task connected to the claim.
+2. OPA evaluates current identity, tenant, token lifetime, task lifetime, risk, posture, policy, stream freshness, amount, and approval.
 
-A kill switch is important but coarse.
+The PEP requires both. Relationship authority cannot override a revoked session or cross-tenant resource. Contextual policy cannot invent the task-to-claim relationship.
 
-Prefer a response ladder:
+Artifacts:
 
-```text
-continue
-reduce scope
-read-only
-disable one tool
-require approval
-pause
-revoke
-terminate
-```
+- [`policies/openfga/model.fga`](policies/openfga/model.fga) — intersection-based task relationship model;
+- [`policies/opa/dynamic.rego`](policies/opa/dynamic.rego) — conflict-free Rego v1 contextual policy; and
+- [`policies/opa/dynamic_test.rego`](policies/opa/dynamic_test.rego) — executable policy tests.
 
-This preserves availability without ignoring risk.
+The Python adapters construct real SDK request types but make no external network call. Production code should configure timeouts, circuit breakers, TLS, authenticated service identity, bounded retries, and decision telemetry.
 
----
+## 10. Failure policy
 
-# 36. Asynchronous agents
+Write the policy before the outage:
 
-A queued task may resume hours later.
+| Failure | Claim read | Claim update | Payment |
+|---|---|---|---|
+| PDP unavailable | deny | deny | deny |
+| relationship check unavailable | deny | deny | deny |
+| signal stream stale/gapped | explicitly permitted degraded read | deny | deny |
+| approval store unavailable | not needed | not needed | deny |
+| audit sink delayed | buffer within bounded durable queue | buffer or deny by policy | normally deny if evidence cannot be guaranteed |
 
-Never assume the authorization state captured at queue time is still valid.
+“Fail open for availability” is not a sufficient design. If a degraded path exists, name the action, data class, maximum duration, compensating monitoring, and recovery behavior.
 
-Queue durable **intent**, not durable authority:
+## 11. Observability and privacy
 
-```text
-task ID
-requested action
-resource
-parameters
-```
+Record enough to explain the decision without logging bearer credentials or raw approval contents:
 
-On resume:
+- hashed proposal and projection fingerprints;
+- subject, actor, workload, tenant, task, action, and resource identifiers;
+- SET `jti`, `txn`, type, domain, and sequence;
+- policy, relationship, resource, delegation, and approval versions;
+- decision ID, reason codes, and outcome;
+- lifecycle timestamps; and
+- trace/operation identifiers.
 
-```text
-re-authenticate workload
-reload task
-re-evaluate authorization
-obtain fresh credential
-execute
-```
+Protect these records: identifiers and risk states may be sensitive. Apply access control, retention, regional handling, and integrity controls. Never record private signing keys, bearer tokens, full document contents, or unrestricted model prompts.
 
----
+## 12. Practical lab
 
-# 37. Multi-agent revocation
+### Setup
 
-Chain:
+From this course directory:
 
-```text
-Alice -> Supervisor -> Specialist -> Tool
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+pytest -q
+jupyter lab dynamic_authorization.ipynb
 ```
 
-If Alice revokes delegation:
+No cloud account, API key, or network service is required.
 
-```text
-Supervisor authority -> invalid
-Specialist child authority -> invalid
-active tool session -> invalid
-```
+### Notebook sequence
 
-Track delegation families/lineage so cancellation propagates across descendants.
+The notebook asks you to:
 
----
+1. label a 32-case authorization matrix;
+2. measure the invalid acceptances from one-time scope authorization;
+3. issue and inspect an Ed25519-signed SET;
+4. validate, persist, acknowledge, and asynchronously project it;
+5. prove subject isolation and duplicate idempotency;
+6. inject cross-domain reordering, stale relaxation, and a gap;
+7. exploit an incomplete payment cache key and compare the corrected key;
+8. revoke a session between initial authorization and commit;
+9. resume a task after its authority changed;
+10. construct OPA and OpenFGA inputs using current trusted state;
+11. inspect lifecycle metrics with deterministic logical milliseconds; and
+12. apply the release gate.
 
-# 38. Dynamic authorization control plane
+### Required checkpoint
 
-```text
- Identity / Workload / Risk / Policy / Resource / Approval
-             \       |       |       |       /
-                     v
-               Signal Layer
-             SSF / CAEP / Events
-                     |
-                     v
-             Authorization State
-                     |
-        +------------+-------------+
-        |                          |
-        v                          v
-   Token Broker                   PDP
-        |                          |
-        +------------+-------------+
-                     |
-                     v
-                    PEP
-                     |
-                     v
-             Agent / Tool / API
-```
+Before continuing, predict all three outcomes and explain why:
 
----
+1. Risk sequence 9 reports `low`; session sequence 1 later reports revoked.
+2. A CAD 300 payment is cached; the proposal changes to CAD 900.
+3. The PEP allows an update; the task is revoked before commit.
 
-# 39. Event-driven architecture
+Correct answers: session revocation applies because ordering is per domain; the changed amount misses the safe cache and invalidates exact approval; and the commit is denied after current-state reauthorization.
 
-Enterprise implementation might use:
+### Validation commands
 
-```text
-Kafka
-Kinesis
-SNS/SQS
-EventBridge
-Pub/Sub
-Azure Event Grid
+```bash
+pytest -q tests/test_dynamic_authorization.py
+opa test policies/opa
+fga model validate --file policies/openfga/model.fga
 ```
-
-for internal authorization events.
 
-SSF/CAEP provides standardized security signal semantics/interoperability; your internal event platform provides transport and operational infrastructure.
+The tests include receiver profile failures, wrong signatures, duplicates, restart recovery, subject isolation, independent domain ordering, stale relaxations, gaps, cache-key completeness, mid-flight revocation, resume, exact approval, idempotency, dependency failure, policy adapters, privacy-safe evidence, and the labeled release matrix.
 
-Do not confuse the two layers.
+## 13. Evaluation and release gate
 
----
+The hardened matrix must satisfy:
 
-# 40. CAEP interoperability direction
-
-The OpenID Shared Signals working group now has final SSF and CAEP 1.0 specifications. In July 2026 it also published a CAEP Interoperability Profile 1.0 draft defining tighter interoperability requirements such as endpoint attributes and OAuth use for SSF endpoints.
-
-For a state-of-the-art course, learners should understand both:
-
-```text
-stable final CAEP semantics
-```
-
-and:
-
 ```text
-emerging interoperability profiles
+invalid_acceptances == 0
+valid_work_blocked == 0
+observed_outcomes == expected_outcomes
+receive_to_enforce_ms <= stated SLO
 ```
 
-without treating a draft as final.
+The notebook's time values are deterministic **logical milliseconds** assigned at each lifecycle stage. They test metric math and gate behavior; they are not fabricated wall-clock benchmark results. Measure real deployments with a monotonic clock and report percentiles by event type, region, and enforcement path.
 
----
+Recommended production indicators:
 
-# 41. Microsoft Entra CAE production lesson
+- SET verification failure rate by issuer and reason;
+- duplicate, delayed, and gap rates by stream;
+- persisted-but-unprojected backlog age;
+- receive-to-project and receive-to-enforce p50/p95/p99;
+- stale-stream duration;
+- decisions by reason, action, and policy version;
+- mid-flight revocation blocks;
+- decision-cache hit rate and version-mismatch rate; and
+- approval replay and operation-conflict counts.
 
-Microsoft's CAE architecture demonstrates an important trade-off:
+## 14. Production hardening checklist
 
-```text
-do not solve revocation only by making every token extremely short
-```
+- [ ] Receiver endpoints require TLS and authenticated stream configuration.
+- [ ] Algorithms, issuer, audience, key IDs, event types, and subject formats are allowlisted.
+- [ ] Key refresh is issuer-bound and tested through overlap and unknown-key failures.
+- [ ] Valid SETs are durably stored before HTTP 202.
+- [ ] `jti` deduplication survives restart and concurrent delivery.
+- [ ] Event data has a schema and size limit for every allowed type.
+- [ ] Subject resolution is tenant-aware and collision-resistant.
+- [ ] Every signal domain has documented ordering and repair semantics.
+- [ ] Restrictive state cannot be undone by an unauthoritative stale relaxation.
+- [ ] Snapshot/replay repairs gaps and records provenance.
+- [ ] Decision leases bind exact inputs, trusted versions, and a short lifetime.
+- [ ] Writes and consequential actions fail closed on stale critical dependencies.
+- [ ] PEPs re-check after waits and immediately before effects.
+- [ ] Approval is exact, expiring, revocable, and single-use where required.
+- [ ] Operation IDs bind canonical requests and support reconciliation.
+- [ ] OPA/OpenFGA outages, timeouts, and partial failures are tested.
+- [ ] Evidence excludes credentials and sensitive payloads.
+- [ ] Propagation SLOs have alerts and error budgets.
+- [ ] Incident drills cover stream compromise, key rotation, replay storms, and projector lag.
 
-Instead:
+## 15. Exercises
 
-```text
-longer-lived token
-+
-critical event awareness
-+
-resource enforcement
-+
-claims challenge
-+
-fresh policy evaluation
-```
+### Beginner — add credential change
 
-This improves resilience while allowing important changes to be enforced before normal expiry.
+Add the CAEP `credential-change` event to the allowlist and projection. Define which credential statuses attenuate authority. Add receiver, projection, and policy tests.
 
-The general lesson applies beyond Microsoft, even though the concrete protocol behavior is provider-specific.
+### Intermediate — repair a sequence gap
 
----
+Add a trusted snapshot API fixture. A gap must mark state stale; a signed snapshot with an authoritative version repairs it. Prove an older snapshot cannot relax newer restrictive state.
 
-# 42. Observability
+### Intermediate — safe multi-instance cache
 
-Track:
+Replace the local decision cache with a Redis-shaped adapter. Keep exact proposal and state-version binding. Test two PEP instances, eviction, stale entries, and cache unavailability.
 
-```text
-active agent sessions
-active delegation families
-decision lease age
-revocation propagation latency
-event delivery latency
-step-up frequency
-denial reason
-cache hit rate
-stale decision prevented
-quarantined agents
-```
+### Advanced — transactional outbox
 
-Security latency is measurable.
+Add an outbox next to the business effect so decision evidence and the effect commit atomically. Simulate crashes before and after commit and prove reconciliation does not duplicate payment.
 
----
+### Advanced — production transport
 
-# 43. Revocation SLO
+Put the receiver behind mTLS or sender-authenticated HTTPS, add rate and body-size limits, issuer-bound JWKS refresh, dead-letter handling, and replay/snapshot recovery. Threat-model SSRF, algorithm confusion, key compromise, and event floods.
 
-Define:
+## 16. Common anti-patterns
 
-```text
-user disabled -> sensitive agent access blocked
-```
+- **Decode-only JWT handling:** claims without verified signature and issuer are attacker input.
+- **Global session state:** an event for one subject changes another subject's authority.
+- **One `last_event_time`:** unrelated new events suppress older critical signals.
+- **Mark-before-persist:** a crash loses an event that the transmitter believes was accepted.
+- **First delivery wins:** retransmission becomes an error rather than an idempotent outcome.
+- **Cache by action only:** changed resource, amount, purpose, tenant, or policy reuses authority.
+- **Caller-supplied policy version:** untrusted input chooses which policy is “current.”
+- **Approval boolean:** the system cannot prove what exact action was approved.
+- **PDP allow equals execution:** obligations and commit-time state are bypassed.
+- **`sleep()` as latency evidence:** artificial delay is not propagation measurement.
+- **CAE means instant:** distributed enforcement always has a measurable bound.
+- **Vendor behavior equals CAEP:** proprietary claims challenges are mislabeled as the standard.
 
-within an explicit target, for example:
+## 17. Course handoff
 
-```text
-P95 < 60 seconds
-```
+This course establishes that authority must be fresh at the point of effect. Intermediate 06 applies that invariant to Model Context Protocol tool boundaries: tool discovery is not authorization, client annotations are not trusted policy, and every tool invocation still needs server-side identity, argument, resource, and current-state enforcement.
 
-Different operations may require different targets.
+## References
 
-Measure end-to-end:
+Primary specifications and official documentation:
 
-```text
-signal created
- -> transmitted
- -> received
- -> state updated
- -> cache invalidated
- -> PEP enforcement
-```
+- [OpenID Shared Signals Framework 1.0 Final](https://openid.net/specs/openid-sharedsignals-framework-1_0-final.html)
+- [OpenID Continuous Access Evaluation Profile 1.0 Final](https://openid.net/specs/openid-caep-1_0-final.html)
+- [OpenID CAEP Interoperability Profile 1.0 — draft](https://openid.net/specs/openid-caep-interoperability-profile-1_0.html)
+- [OpenID announcement: SSF, CAEP, and RISC Final Specifications](https://openid.net/three-shared-signals-final-specifications-approved/)
+- [RFC 8417 — Security Event Token](https://www.rfc-editor.org/rfc/rfc8417)
+- [RFC 8935 — Push-Based Security Event Token Delivery](https://www.rfc-editor.org/rfc/rfc8935)
+- [RFC 8936 — Poll-Based Security Event Token Delivery](https://www.rfc-editor.org/rfc/rfc8936)
+- [RFC 9493 — Subject Identifiers for Security Event Tokens](https://www.rfc-editor.org/rfc/rfc9493)
+- [Microsoft Entra: How to use Continuous Access Evaluation-enabled APIs](https://learn.microsoft.com/en-us/security/zero-trust/develop/secure-with-cae)
+- [Microsoft Entra: Continuous access evaluation](https://learn.microsoft.com/en-us/entra/identity/conditional-access/concept-continuous-access-evaluation)
+- [Open Policy Agent documentation](https://www.openpolicyagent.org/docs)
+- [OpenFGA documentation](https://openfga.dev/docs)
+- [PyJWT usage](https://pyjwt.readthedocs.io/en/stable/usage.html)
+- [Cryptography Ed25519](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/ed25519/)
 
----
-
-# 44. Practical notebook
-
-The notebook builds a local dynamic authorization control plane for a long-running Claims Agent.
-
-It covers:
-
-1. initial authorization;
-2. decision leases;
-3. time expiry;
-4. risk changes;
-5. policy version changes;
-6. resource version changes;
-7. approval revocation;
-8. agent quarantine;
-9. CAEP-style events;
-10. session revocation;
-11. token claims changes;
-12. step-up;
-13. scope attenuation;
-14. event deduplication;
-15. out-of-order event protection;
-16. cache invalidation;
-17. TOCTOU protection;
-18. asynchronous resume;
-19. delegation-family revocation;
-20. dynamic RAG/tool authorization;
-21. audit evidence;
-22. revocation latency metrics.
-
----
-
-# 45. Production checklist
-
-## Re-evaluation
-
-- What events invalidate an allow?
-- Which actions require a fresh check?
-- What is the maximum decision age?
-- Are long waits checkpoints?
-
-## Signals
-
-- Which sources are authoritative?
-- Are events authenticated?
-- Are duplicates handled?
-- Is ordering handled?
-- What happens if delivery fails?
-
-## Response
-
-- Can authority be reduced?
-- Can step-up be requested?
-- Can sessions be paused?
-- Can active credentials be revoked?
-- Can descendants be revoked?
-
-## Cache
-
-- What is the cache key?
-- What is the lease duration?
-- Which events invalidate it?
-- Is policy version included?
-- Is resource version included?
-
-## Long-running agents
-
-- Is authority refreshed after resume?
-- Are queued operations re-authorized?
-- Are side effects checked immediately before commit?
-- Is delegation lineage tracked?
-
-## Evidence
-
-- signal ID;
-- signal source;
-- subject;
-- actor;
-- old state;
-- new state;
-- policy version;
-- action taken;
-- propagation latency.
-
----
-
-# 46. Key takeaways
-
-1. Authorization is state that can become stale.
-2. A cryptographically valid token can represent outdated authority.
-3. Long-running agents require explicit re-evaluation checkpoints.
-4. CAEP 1.0 is now a final OpenID specification for continuous security signals.
-5. SSF transports standardized security events between cooperating systems.
-6. Microsoft Entra CAE is a vendor implementation/pattern and should not be confused with the entire CAEP standard.
-7. Dynamic response can attenuate, step-up, pause or revoke—not only allow/deny.
-8. Decision caches are security mechanisms and need leases plus invalidation.
-9. Event delivery needs defense against delay, duplication, ordering problems and failure.
-10. High-impact side effects need fresh authorization close to execution.
-11. Asynchronous agents should persist intent, then reacquire authority on resume.
-12. Revocation should propagate across multi-agent delegation descendants.
-13. AI risk signals become much more useful when connected to deterministic authorization controls.
-14. Revocation propagation latency should be measured as an SLO.
-
----
-
-# References
-
-- OpenID Continuous Access Evaluation Profile 1.0 — Final  
-  https://openid.net/specs/openid-caep-1_0-final.html
-- OpenID Shared Signals Working Group  
-  https://openid.net/wg/sharedsignals/
-- OpenID Shared Signals Specifications  
-  https://openid.net/wg/sharedsignals/specifications/
-- CAEP Interoperability Profile 1.0 — Draft  
-  https://openid.net/specs/openid-caep-interoperability-profile-1_0.html
-- RFC 8417 — Security Event Token  
-  https://www.rfc-editor.org/rfc/rfc8417
-- Microsoft — Secure applications with Continuous Access Evaluation  
-  https://learn.microsoft.com/en-us/security/zero-trust/develop/secure-with-cae
-- Microsoft — Using CAE-enabled APIs  
-  https://learn.microsoft.com/en-us/entra/identity-platform/app-resilience-continuous-access-evaluation
-- NIST SP 800-207 — Zero Trust Architecture  
-  https://csrc.nist.gov/publications/detail/sp/800-207/final
-
----
-
-# Next course
-
-## Intermediate 06 — Authorization for MCP & Tool Servers
-
-Next we apply the identity and authorization stack directly to agent tools:
+Further architecture guidance:
 
-```text
-MCP server identity
-tool discovery authorization
-per-tool permission
-target-resource permission
-delegated user authority
-agent authority
-OAuth-protected MCP
-step-up
-confused deputy prevention
-dynamic revocation
-audit
-```
+- [NIST SP 800-207 — Zero Trust Architecture](https://csrc.nist.gov/pubs/sp/800/207/final)
+- [NIST SP 800-162 — Guide to Attribute Based Access Control](https://csrc.nist.gov/pubs/sp/800/162/upd2/final)
+- [OWASP Authorization Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html)

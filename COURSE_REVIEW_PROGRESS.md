@@ -15,7 +15,9 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 | Intermediate 01 — Workload Identity with SPIFFE & SPIRE | Deep pass complete | Attestation, unambiguous registration, SVID verification, full-state updates, rotation, federation |
 | Intermediate 02 — Agent Authentication with OAuth 2.0 & OIDC | Deep pass complete | Transaction binding, token profiles, broker attenuation, DPoP, resource authorization, MCP |
 | Intermediate 03 — Token Exchange, Delegation & Impersonation | Deep pass complete | RFC 8693 profiles, actor chains, multidimensional attenuation, exact approval, idempotency, revocation |
-| Intermediate 04 — Fine-Grained Authorization with OPA, Cedar & OpenFGA | Next | Trusted authorization tuple, engine semantics, object policy, consistency, obligations |
+| Intermediate 04 — Fine-Grained Authorization with OPA, Cedar & OpenFGA | Deep pass complete | Trusted authorization tuple, engine semantics, object policy, consistency, obligations |
+| Intermediate 05 — Dynamic Authorization & Continuous Access Evaluation | Deep pass complete | SET validation, durable projection, domain ordering, decision leases, commit-time reauthorization |
+| Intermediate 06 — MCP Tool Authorization | Next | Discovery versus execution, server-side PEPs, tool arguments, resources, transport, current authority |
 | Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
 
 ## Beginner 01 — claim-to-proof map
@@ -217,6 +219,28 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Lab-backed executed notebook covers the unsafe baseline, hardened decision, AuthZEN, OPA/Cedar/OpenFGA representations, exact approval, retries, failure injection, semantic parity, evaluation, production mapping, and exercises.
 - Learning Hub checkpoint tests composition of relationship and attribute policy; two additional questions cover mandatory obligations and changed-proposal approval invalidation.
 - Current references prioritize final AuthZEN Authorization API 1.0, official OPA operations guidance, Cedar policy/schema documentation, OpenFGA task-based agent authorization, and NIST ABAC/Zero Trust publications.
+
+## Intermediate 05 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| A signed event is not trusted until its SET/SSF profile and configured stream are validated | README receiver pipeline and notebook token/profile inspection | Ed25519 `SetTransmitter`, issuer-bound `StreamConfig`, and `SecurityEventInbox.receive()` | wrong type, issuer, audience, signature, profile, event count/type, sequence, and subject tests |
+| Push acknowledgement follows durable acceptance, not business processing | README delivery architecture and notebook receive/project split | SQLite inbox persists under unique `jti` before 202 semantics; projector marks processing separately | persistence-order, duplicate, and restart-recovery tests |
+| Signal state must be subject scoped and independently ordered by domain | README projection semantics and notebook subject/order experiments | `ProjectionStore` resolves verified `sub_id` and keeps per-domain cursors | cross-subject isolation, newer-risk/older-session, stale-relaxation, late-restriction, and gap tests |
+| Cached authorization is a bounded lease over exact intent and trusted state | README lease model and notebook cache exploit | `DecisionCache` binds full proposal, caller, tenant, workload, projection fingerprint, versions, and lifetime | changed amount/purpose/tenant/state key tests plus intentionally vulnerable comparison |
+| An earlier allow cannot authorize a later side effect | README reauthorization boundaries and notebook TOCTOU/resume experiments | `PolicyEnforcementPoint.execute()` decides again from current projection immediately before effect | mid-flight session revocation and post-wait task revocation tests |
+| Relationship and contextual policies are both necessary | README OPA/OpenFGA composition and notebook SDK inputs | OpenFGA task intersection plus conflict-free Rego v1 policy and reference PDP | SDK tuple assertions, OPA policy tests, OpenFGA validation, and 32-case matrix |
+| Exact approval and idempotency remain necessary under continuous authorization | README approval/retry section and notebook payment evidence | proposal-bound versioned `ApprovalReceipt`, locked consumption, and operation digest ledger | changed proposal, replay, exact retry, and changed-request conflict tests |
+| Propagation claims need lifecycle timestamps and a release gate, not artificial sleep | README observability/evaluation and notebook metrics | deterministic logical stage timestamps plus `propagation_metrics()` and `release_gate()` | metric-arithmetic test and zero-invalid-acceptance gate |
+
+## Intermediate 05 — validation record
+
+- Thirty-two deterministic scenarios: five expected allowed and twenty-seven expected blocked across identity, isolation, session/claims/device/risk, task, relationship, delegation, workload, stream, approval, purpose, amount, and policy boundaries.
+- Sixty-five focused tests for SET profile/trust, durable acknowledgement, duplicate delivery, restart recovery, fail-closed subject isolation, per-domain ordering, stale relaxation, gaps, cache/approval binding, commit-time revocation and dependency failure, resume, exact approval, retry, policy adapters, evidence, and metrics.
+- The executed notebook covers the unsafe baseline, signed SET inspection, validate/persist/ack/project flow, duplicates, subject scope, ordering, gaps, cache poisoning, TOCTOU, resume, restart, OPA/OpenFGA inputs, lifecycle metrics, release gating, and production exercises.
+- OPA uses a conflict-free Rego v1 package with explicit degraded-read semantics; OpenFGA requires the intersection of assigned and delegated task relationships.
+- Learning Hub questions test durable acknowledgement, per-domain ordering, exact cache/approval binding, commit-time reauthorization, and sequence-gap policy.
+- References prioritize final SSF 1.0, CAEP 1.0, RFC 8417/8935/8936/9493, official OPA/OpenFGA/library guidance, and explicitly distinguish the draft CAEP interoperability profile and vendor-specific claims challenges.
 
 ## Review sequence
 

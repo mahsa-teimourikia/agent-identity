@@ -1,18 +1,22 @@
 model
   schema 1.1
 
-type user
-
 type agent
-  relations
-    define can_act_on_behalf_of: [user]
 
 type task
   relations
     define assignee: [agent]
-    define requester: [user]
+    define delegated_agent: [agent]
+    define active_participant: assignee and delegated_agent
 
 type claim
   relations
-    define viewer: [user, agent]
-    define editor: [user, agent]
+    define assigned_task: [task]
+    define reader: active_participant from assigned_task
+    define updater: active_participant from assigned_task
+    define can_read: reader
+    define can_update: updater
+
+# OpenFGA answers the relationship question only. The PEP must also require
+# current subject, tenant, workload, task lifetime, risk, policy, resource,
+# stream freshness, and exact approval facts from the contextual policy plane.
