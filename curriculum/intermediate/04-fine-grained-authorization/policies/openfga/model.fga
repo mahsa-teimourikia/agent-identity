@@ -4,20 +4,20 @@ model
 type user
 
 type agent
-  relations
-    define can_act_on_behalf_of: [user]
 
 type task
   relations
-    define assignee: [agent]
     define requester: [user]
+    define assignee: [agent]
+    # Written only after verified user-to-agent delegation is resolved.
+    define delegated_agent: [agent]
+    define active_agent: assignee and delegated_agent
 
 type claim
   relations
     define owner: [user]
-    define viewer: [user, agent]
-    define editor: [user, agent]
-
-type tool
-  relations
-    define can_call: [user, agent]
+    define assigned_task: [task]
+    define viewer: [user]
+    define can_read: viewer or active_agent from assigned_task
+    define can_update: active_agent from assigned_task
+    define can_pay: active_agent from assigned_task

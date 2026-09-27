@@ -196,6 +196,28 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 - Learning Hub checkpoint tests current-actor semantics; three additional questions cover resource widening, impersonation controls, and changed-request retry conflict.
 - References distinguish final OAuth/JWT/RAR/sender-constraint standards and AuthZEN 1.0 from active Transaction Token, identity-chaining, delegated-refresh, actor-profile, and agent-chain drafts.
 
+## Intermediate 04 — claim-to-proof map
+
+| Claim | Teaching artifact | Implementation proof | Verification |
+| --- | --- | --- | --- |
+| Agent proposals cannot create identity, tenant, scope, workload trust, or approval authority | README trust boundary and notebook field inspection | separate `ActionProposal`, `VerifiedCaller`, authoritative task/resource/risk records, and exact `ApprovalReceipt` | proposal-field, substitution, isolation, and approval tests |
+| A valid scope is necessary but insufficient for object-level authorization | README five-plane model and baseline experiment | `ReferencePDP` intersects identity, workload, task, tenant, object/owner, action, lifecycle, state, risk provenance, purpose, amount, and approval | 33-case baseline/control matrix; scope-only baseline accepts 28 invalid cases |
+| A PDP decision does not execute the business effect | README mechanics and notebook decision/receipt comparison | separate `ReferencePDP` and `PolicyEnforcementPoint` | repeated-PDP, obligation, approval-consumption, and evidence tests |
+| Consequential approval binds one exact proposal and is single use | README payment walkthrough and notebook retry experiment | digest-bound `ApprovalReceipt` and locked `ApprovalStore` | changed-proposal and concurrent-consumption tests |
+| Policy engines need explicit semantic-parity evidence | README engine comparison and notebook parity evaluation | one trusted adapter contract plus executable Cedar policy/schema and OPA/OpenFGA artifacts | Cedar validates and matches all 30 normal labeled cases |
+| Relationship policy complements rather than replaces contextual policy | README OpenFGA composition and notebook SDK request inspection | OpenFGA task intersection plus attribute-aware reference/Cedar/OPA policy | SDK tuple test and risk/approval/state negative cases |
+| Obligations, version mismatches, dependency failures, and retries are enforcement concerns | README failure/production sections and notebook injection | fail-closed PEP, obligation allowlist, policy-version check, and operation ledger | outage, stale-policy, unsupported-obligation, exact-retry, and conflict tests |
+| Decision evidence should be reconstructable without credentials or private reasoning | README observability guidance and notebook evidence inspection | IDs, policy version, reasons, obligation IDs, input digest, and outcome | privacy-safe evidence test |
+
+## Intermediate 04 — validation record
+
+- Thirty-three deterministic scenarios: four expected valid and twenty-nine expected blocked across identity, isolation, lifecycle, authority, ownership, state, risk provenance, approval, policy dependency, and obligation boundaries.
+- Forty-eight focused tests for the reference PDP/PEP, exact approval, concurrency, idempotency, AuthZEN request shape, OPA input, real Cedar execution, real OpenFGA SDK request construction, failure evidence, evidence safety, and metrics.
+- OPA 1.21 validates the Rego package and passes nine policy tests; OpenFGA CLI 0.8.1 validates the relationship model; Cedar validates and executes in the focused suite.
+- Lab-backed executed notebook covers the unsafe baseline, hardened decision, AuthZEN, OPA/Cedar/OpenFGA representations, exact approval, retries, failure injection, semantic parity, evaluation, production mapping, and exercises.
+- Learning Hub checkpoint tests composition of relationship and attribute policy; two additional questions cover mandatory obligations and changed-proposal approval invalidation.
+- Current references prioritize final AuthZEN Authorization API 1.0, official OPA operations guidance, Cedar policy/schema documentation, OpenFGA task-based agent authorization, and NIST ABAC/Zero Trust publications.
+
 ## Review sequence
 
 Each subsequent course will be audited against its immediate prerequisites and successor. The implementation pass will update the chapter, lab, notebook, tests, checkpoint, references, and Hub metadata together so the learner path and code cannot silently drift apart.
