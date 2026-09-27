@@ -1,1254 +1,396 @@
-# Intermediate 01 — Workload Identity with SPIFFE & SPIRE
+# Workload Identity with SPIFFE and SPIRE
 
-![Workload Identity with SPIFFE & SPIRE](images/workload-identity-spiffe-spire.png)
+> **Goal:** Design, implement, attack-test, and productionize workload identity for an AI-agent runtime using attestation, short-lived SVIDs, exact peer verification, lifecycle-aware authorization, rotation, and federation—without shipping a long-lived workload secret.
 
-> **Goal:** give an AI agent's running workload a cryptographically verifiable, short-lived identity without shipping long-lived application secrets.
+This intermediate course treats workload identity as a runtime security system, not a certificate-format exercise. The reusable lab and notebook implement the same deterministic Northstar Travel scenario, then compare an unsafe “credential present” baseline with a hardened control across 20 labelled cases.
 
-In the beginner track we separated:
+## Start here
 
-```text
-Logical Agent Identity
-        |
-        | runtime binding
-        v
-Running Workload
-        |
-        | proves itself
-        v
-Credential
-```
+1. Read this chapter for the architecture, mechanics, trade-offs, and production guidance.
+2. Run the [guided notebook](workload_identity_spiffe_spire.ipynb) for the complete lab narrative.
+3. Inspect [lab.py](lab.py) for the reusable implementation.
+4. Run `uv run pytest -q curriculum/intermediate/01-workload-identity-spiffe-spire/tests`.
+5. Run `uv run python curriculum/intermediate/01-workload-identity-spiffe-spire/lab.py` for the baseline/control report.
 
-This course implements the runtime layer using **SPIFFE** and **SPIRE**.
-
----
+The default path is deterministic, credential-free, offline, and side-effect free. It is a teaching simulator—not a SPIFFE conformance suite and not a substitute for deploying SPIRE.
 
 ## Learning outcomes
 
-You will learn to:
+After completing the course, you can:
 
-- explain SPIFFE, SPIRE, trust domains, SPIFFE IDs, SVIDs and trust bundles;
-- distinguish logical agent identity from workload identity;
-- design stable SPIFFE ID naming schemes;
-- understand node and workload attestation;
-- understand SPIRE Server and SPIRE Agent responsibilities;
-- retrieve identities through the SPIFFE Workload API;
-- compare X.509-SVID, JWT-SVID and the newer WIT-SVID profile;
-- use X.509-SVIDs for mutually authenticated TLS;
-- understand audience-bound JWT-SVIDs and replay risk;
-- reason about automatic credential rotation;
-- map Kubernetes metadata to workload identity;
-- design registration/selector rules;
-- separate authentication from authorization;
-- federate trust domains;
-- connect SPIFFE identities to agent registries and policy engines;
-- avoid common production anti-patterns.
+- distinguish human, logical-agent, workload, node, service, and resource identities;
+- explain how a trust domain, SPIFFE ID, SVID, bundle, Workload API, node attestation, and workload attestation fit together;
+- design registration entries whose selectors map one observed runtime to exactly one identity;
+- validate X.509-SVID chain, time, profile, URI SAN, trust domain, exact peer, and lifecycle;
+- validate JWT-SVID key, algorithm, subject, audience, time, lifetime, exact peer, and lifecycle;
+- consume full-state Workload API updates correctly, including rotation and redaction;
+- keep cryptographic authentication separate from resource authorization;
+- operate federation without turning an external trust bundle into blanket access; and
+- define release gates for invalid acceptance, valid-work blocking, stale credentials, and authorization violations.
 
----
+## Prerequisites
 
-# 1. Why workload identity?
+- [Authentication, Credentials and Tokens](../../beginner/03-authentication-credentials-tokens/)
+- [Authorization for Agents](../../beginner/04-authorization-for-agents/)
+- [Least-Privilege Tool Access](../../beginner/05-least-privilege-tool-access/)
+- [Agent Identity Lifecycle](../../beginner/06-agent-identity-lifecycle/)
+- Python dataclasses, public-key signatures, TLS, JWTs, and Kubernetes concepts
 
-Traditional applications often start with:
+## Scenario, success criteria, and boundaries
+
+Northstar Travel runs a logical booking agent in Kubernetes. The runtime calls an internal payment API and a partner research service. Pods are replaced frequently; a static API key cannot prove which node, namespace, service account, image, or approved deployment produced a request.
+
+The control plane must:
+
+- derive workload identity from attested runtime evidence, never a requested agent name;
+- issue short-lived credentials only when one active registration entry matches;
+- accept the booking workload only as `spiffe://corp.example/ns/travel/sa/booking-agent`;
+- rotate keys and bundles without losing valid traffic or extending stale trust;
+- authenticate `partner.example` workloads only through configured partner bundles;
+- authorize the exact authenticated SPIFFE ID, action, and resource independently;
+- stop using an SVID when a full-state update removes it; and
+- log decisions, reason codes, versions, and digests without credential material.
+
+Success means all 20 labelled cases match their expected outcome, with zero invalid acceptance, authorization violation, stale-credential acceptance, or valid-work block.
+
+### Non-goals
+
+The local lab does not implement the complete SPIFFE specifications, TLS handshakes, SPIRE plugins, high availability, ACME, OAuth token exchange, or production PKI ceremonies. It makes the security boundaries observable. Use the official SPIRE quickstart and supported client libraries for real integration.
+
+## 1. Why workload identity is necessary
+
+A workload is executing code: a process, container, pod, VM, serverless instance, or agent worker. A logical AI agent is a governed software identity: purpose, owner, version, policy, and lifecycle. They are related, but not interchangeable.
+
+| Question | Identity that answers it |
+| --- | --- |
+| Who initiated the task? | human or service principal |
+| Which governed agent is acting? | logical agent identity |
+| Which running code is on the connection? | workload identity |
+| Which machine attested that runtime? | node identity |
+| What object is being accessed? | resource identity |
+
+TLS encryption alone proves only that a peer owns a key accepted by the verifier. A generic certificate, shared token, pod label, or caller-supplied agent name does not prove that the approved workload is using that key now.
+
+SPIFFE standardizes how a workload is named and receives verifiable identity documents. SPIRE is a production implementation that performs node/workload attestation, registration, issuance, rotation, and bundle distribution. See the [SPIFFE overview](https://spiffe.io/docs/latest/spiffe-about/overview/) and [SPIRE concepts](https://spiffe.io/docs/latest/spire-about/spire-concepts/).
+
+## 2. Mental model: identity is a pipeline
+
+```mermaid
+flowchart LR
+    W[Running agent workload] -->|local Workload API| A[SPIRE Agent]
+    A -->|PID and kernel metadata| T[Workload attestors]
+    T -->|trusted selectors| M[Registration matching]
+    M -->|exactly one active entry| C[Cached SVID and bundles]
+    C --> W
+    W -->|mTLS or JWT-SVID| P[Peer PEP]
+    P --> V[Verify bundle, profile, time, exact ID]
+    V --> Z[Authorize ID plus action plus resource]
+    Z --> R[Effect or default deny]
+```
+
+The workload does not choose its identity. It calls a local endpoint. The agent identifies the caller out of band, obtains selectors from trusted attestor plugins, matches registration state, and returns authorized credentials. The official [Workload API specification](https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/) defines streaming responses; [SPIRE concepts](https://spiffe.io/docs/latest/spire-about/spire-concepts/) explains the implementation path.
 
 ```text
-SERVICE_API_KEY=...
-CLIENT_SECRET=...
-DATABASE_PASSWORD=...
+agent/model -> proposes an action and business arguments
+trusted runtime -> obtains attested workload credentials
+peer/gateway -> verifies credential and exact expected peer
+policy enforcement point -> authorizes action and resource
+service -> performs and verifies the effect
 ```
 
-For autonomous agents this becomes especially dangerous because agents may:
+An SVID authenticates a workload. It does not grant “admin,” approve a payment, validate a model answer, or authorize every resource in its trust domain.
+
+## 3. Foundations
+
+### 3.1 Trust domain and bundle
+
+A trust domain is the administrative security boundary within which SPIFFE IDs are issued, such as `corp.example`. Its bundle contains public verification material. A DNS-like name does not mean DNS is consulted during every decision, and possession of a bundle does not create application authorization.
+
+Rotation usually needs an overlap:
+
+1. distribute a bundle containing old and new roots;
+2. issue credentials from the new root;
+3. observe verifier adoption;
+4. stop issuance from the old root; and
+5. remove the old root after its credential window and rollback policy permit.
+
+Issuing from the new root before bundle distribution causes outages. Retaining every old root indefinitely preserves stale trust.
+
+### 3.2 SPIFFE ID
 
 ```text
-call many tools
-run in ephemeral containers
-spawn sub-agents
-move between clusters
-access sensitive systems
+spiffe://corp.example/ns/travel/sa/booking-agent
+└────┬────┘ └─────┬──────┘└──────────────┬──────────────┘
+   scheme      trust domain            workload path
 ```
 
-Static secrets answer:
+The [SPIFFE ID specification](https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/) defines canonical syntax. Generic URL parsing is insufficient: user info, ports, queries, fragments, encoded path separators, mixed-case trust domains, and dot segments can create identity confusion. The lab implements a deliberately narrow documented subset.
 
-> Does the caller possess this secret?
+Names should describe stable workload properties, not transient pod IDs or mutable role claims. A path convention may encode namespace and service account, but it is an organizational policy, not evidence of Kubernetes state.
 
-Workload identity aims to answer:
+### 3.3 SVID profiles
 
-> Which verified workload is making this request?
+- **X.509-SVID:** certificate/private-key material for mutual TLS and direct peer authentication.
+- **JWT-SVID:** signed bearer token with subject and audience for protocols where mTLS is unavailable.
+- **WIT-SVID:** optional, incubating workload identity token profile in the current Workload API specification.
 
----
+X.509- and JWT-SVIDs are separate forms. JWT-SVIDs are bearer credentials, so exact audience, short lifetime, transport protection, and replay-aware application design matter. The authoritative profiles are linked from the [SPIFFE specifications index](https://spiffe.io/docs/latest/spiffe-specs/).
 
-# 2. What is SPIFFE?
+### 3.4 Registration entries and selectors
 
-**SPIFFE — Secure Production Identity Framework for Everyone** — defines standards for securely identifying software workloads across heterogeneous infrastructure.
-
-The current SPIFFE standard has three central ideas:
+A registration entry binds a parent node, issued SPIFFE ID, workload-attestor selectors, credential lifetimes, and lifecycle/version state. Selectors may represent Kubernetes namespace, service account, image digest, Unix UID, or process path. They are authority only when produced by a trusted attestor; a caller’s JSON field named `namespace` is not a selector.
 
 ```text
-SPIFFE ID
-   +
-SVID
-   +
-Workload API
+observed node + trusted selectors -> exactly one active registration entry
 ```
 
-The SPIFFE specification describes a standardized identity namespace, verifiable identity documents, and a runtime API through which workloads obtain identity. citeturn0search4turn0search5
+Zero matches deny issuance. Multiple matches indicate policy collision and also deny. Broad entries such as only `k8s:sa:default` make identity theft easy after a scheduling or namespace mistake.
 
-SPIFFE is a **standard**, not the identity server itself.
+## 4. Internal mechanics
 
----
+### 4.1 Node and workload attestation
 
-# 3. What is SPIRE?
+A SPIRE Agent first proves the node on which it runs. Environments use evidence such as cloud instance identity, Kubernetes projected service-account material, TPM evidence, or join tokens. Join tokens are convenient for demonstrations but usually weaker because possession is the proof.
 
-**SPIRE — SPIFFE Runtime Environment** is a CNCF-graduated open-source implementation of SPIFFE.
+When a process connects to the Workload API, the agent identifies it using OS mechanisms and invokes workload-attestor plugins. Registration matching uses those observed selectors. The endpoint must be local and protected by OS access controls; sharing it across hosts destroys the caller-to-runtime binding. See the [Workload Endpoint specification](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_Endpoint.md).
 
-A simplified deployment:
+### 4.2 Issuance, caching, and streaming
+
+The SPIRE Server signs SVIDs and returns them through agents. Agents cache material so workloads survive brief server interruptions. Caching does not permit use after expiry or after removal state arrives.
+
+Workload API fetch calls stream complete state. A client replaces its view rather than merging entries forever. If a later response omits an SVID or bundle, the client stops using it. The lab’s `WorkloadClientCache` rejects partial/replayed updates and empties the SVID cache on removal.
+
+### 4.3 X.509 verification
+
+The lab verifier:
+
+1. parses the locally configured expected peer SPIFFE ID;
+2. selects the bundle for that trust domain;
+3. verifies the certificate signature against an allowed root;
+4. enforces time and maximum lifetime;
+5. enforces a non-CA leaf profile with digital signature and exactly one URI SAN;
+6. parses the URI SAN as a canonical SPIFFE ID;
+7. compares it with the exact expected peer;
+8. checks lifecycle state; then
+9. authorizes the exact identity, action, and resource.
+
+Production code should use a maintained SPIFFE-aware TLS library. The local implementation is inspectable and does not claim complete RFC 5280 path validation.
+
+### 4.4 JWT verification
+
+The verifier uses `kid` only among keys already bound to the expected trust-domain bundle, permits only EdDSA, verifies the signature, requires `sub`/`aud`/`iat`/`exp`, checks exact audience and time, parses `sub`, checks exact peer/lifecycle, then authorizes. It never follows a token-supplied key URL. A received `jku` or `x5u` is not a trust anchor.
+
+## 5. Authentication is not authorization
 
 ```text
-                         +------------------+
-                         |   SPIRE Server   |
-                         |                  |
-                         | Identity policy  |
-                         | Signing          |
-                         | Registration     |
-                         +--------+---------+
-                                  ^
-                                  |
-                           node attestation
-                                  |
-                         +--------+---------+
-                         |   SPIRE Agent    |
-                         |                  |
-                         | workload attest. |
-                         | Workload API     |
-                         +--------+---------+
-                                  ^
-                                  |
-                           local workload API
-                                  |
-                         +--------+---------+
-                         | AI Agent Runtime |
-                         +------------------+
-```
-
-SPIRE automates identity issuance after attesting infrastructure and workloads.
-
----
-
-# 4. SPIFFE IDs
-
-A SPIFFE ID is a URI:
-
-```text
-spiffe://trust-domain/path
-```
-
-Example:
-
-```text
-spiffe://prod.example.com/agents/travel-booking
-```
-
-Breakdown:
-
-```text
-spiffe://
-    scheme
-
-prod.example.com
-    trust domain
-
-/agents/travel-booking
-    workload path
-```
-
-The ID identifies the workload. It is **not a secret**.
-
----
-
-# 5. Naming SPIFFE IDs for agents
-
-Do not encode unstable infrastructure unnecessarily.
-
-Fragile:
-
-```text
-spiffe://example.com/node-42/pod-a98f2
-```
-
-More semantic:
-
-```text
-spiffe://example.com/prod/agents/travel-booking
-```
-
-Possible enterprise convention:
-
-```text
-spiffe://corp.example/<environment>/<workload-type>/<name>
-```
-
-Examples:
-
-```text
-spiffe://corp.example/prod/agent/travel
-spiffe://corp.example/prod/tool/payments
-spiffe://corp.example/prod/service/policy-engine
-```
-
-Authorization policy becomes easier to understand when IDs express meaningful workload roles.
-
----
-
-# 6. Trust domains
-
-The trust domain is the root namespace and trust boundary:
-
-```text
-spiffe://corp.example/...
-```
-
-A trust domain has associated signing/trust material.
-
-Possible design:
-
-```text
-spiffe://prod.corp.example
-spiffe://staging.corp.example
-```
-
-or organizational boundaries:
-
-```text
-spiffe://company-a.example
-spiffe://company-b.example
-```
-
-Trust-domain design is an architectural decision.
-
-Too broad:
-
-```text
-everything everywhere shares one administrative trust boundary
-```
-
-Too fragmented:
-
-```text
-hundreds of domains requiring unnecessary federation
-```
-
----
-
-# 7. SVIDs
-
-An **SVID — SPIFFE Verifiable Identity Document** — is cryptographic evidence that a workload holds a particular SPIFFE identity.
-
-Current SPIFFE standards define profiles for:
-
-```text
-X.509-SVID
-JWT-SVID
-WIT-SVID
-```
-
-The Workload API specification currently requires X.509 and JWT profiles in conforming implementations, while WIT-SVID is optional. citeturn0search0
-
----
-
-# 8. X.509-SVID
-
-An X.509-SVID represents the SPIFFE identity in an X.509 certificate.
-
-Conceptually:
-
-```text
-Certificate
-  Subject Alternative Name:
-    URI: spiffe://corp.example/prod/agent/travel
-```
-
-It can be used for:
-
-```text
-mTLS
-TLS client authentication
-TLS server authentication
-message signing
-service-to-service identity
-```
-
-SPIFFE's X.509-SVID standard builds on normal X.509 validation plus SPIFFE-specific validation requirements. citeturn0search2
-
----
-
-# 9. Why X.509-SVID is powerful
-
-Consider:
-
-```text
-Travel Agent
-     |
-     | mTLS
-     v
-Payment Tool
-```
-
-Both sides prove workload identity:
-
-```text
-caller:
-spiffe://corp.example/prod/agent/travel
-
-server:
-spiffe://corp.example/prod/tool/payment
-```
-
-Then authorization can evaluate:
-
-```text
-principal = SPIFFE ID
-action = payment:create
-resource = trip:483
-```
-
-This is much stronger than trusting:
-
-```text
-source IP
-network location
-shared API key
-```
-
-SPIRE explicitly documents mTLS between workloads on otherwise untrusted networks as a core use case. citeturn0search10
-
----
-
-# 10. JWT-SVID
-
-A JWT-SVID is a signed JWT whose subject is the SPIFFE ID.
-
-Conceptually:
-
-```json
-{
-  "sub": "spiffe://corp.example/prod/agent/travel",
-  "aud": ["payment-api"],
-  "exp": 1787000000
-}
-```
-
-JWT-SVID is useful across L7 systems that already understand bearer tokens.
-
-The specification requires:
-
-```text
-sub = SPIFFE ID
-aud = present and validated
-exp = present and validated
-```
-
-and recommends narrowly scoped audiences. citeturn0search9
-
----
-
-# 11. X.509-SVID versus JWT-SVID
-
-| | X.509-SVID | JWT-SVID |
-|---|---|---|
-| Format | X.509 certificate | JWT/JWS |
-| Typical use | mTLS | L7 bearer auth |
-| Identity | URI SAN | `sub` |
-| Target binding | TLS peer verification | `aud` |
-| Replay | stronger channel properties | bearer replay concern |
-| Rotation | automatic | short-lived issuance |
-| Best default | service/workload communication | compatibility/L7 cases |
-
-SPIFFE guidance recommends X.509-SVIDs where possible because bearer JWTs can be replayed if stolen. citeturn0search6
-
----
-
-# 12. WIT-SVID
-
-The latest Workload API standard also defines an optional **WIT-SVID** profile.
-
-This is newer than the X.509/JWT profiles and should currently be treated as an emerging capability rather than the default enterprise path.
-
-For this course:
-
-```text
-production focus -> X.509-SVID
-interoperability focus -> JWT-SVID
-awareness -> WIT-SVID
-```
-
-The practical lab focuses on the mature X.509/JWT paths.
-
----
-
-# 13. Trust bundles
-
-How does a payment service verify:
-
-```text
-spiffe://corp.example/prod/agent/travel
-```
-
-?
-
-It needs the trust material for:
-
-```text
-corp.example
-```
-
-A SPIFFE bundle contains public key material required to verify SVIDs from a trust domain. Workloads receive relevant bundles through the Workload API. citeturn0search6turn0search0
-
-Trust bundles also rotate.
-
-Do not hard-code one forever.
-
----
-
-# 14. Workload API
-
-A major SPIFFE design property is that workloads do not need a bootstrap API secret to ask for their identity.
-
-The Workload API is normally local:
-
-```text
-unix:///run/spire/sockets/agent.sock
-```
-
-The workload connects locally.
-
-The SPIFFE implementation identifies the caller using out-of-band platform/process information rather than an application-supplied bearer credential. citeturn0search4turn0search0
-
-That removes a difficult bootstrap problem:
-
-```text
-How does a workload authenticate to the system that gives it credentials?
-```
-
----
-
-# 15. Workload API flow
-
-```text
-AI Agent Process
-      |
-      | local API request
-      v
-SPIRE Agent
-      |
-      | inspect workload attributes
-      v
-Selector match
-      |
-      | authorized identity
-      v
-SVID + trust bundle
-```
-
-The workload does not say:
-
-```text
-"I am travel-agent, trust me."
-```
-
-SPIRE derives identity from attested runtime attributes.
-
----
-
-# 16. Node attestation
-
-Before a SPIRE Agent can issue identities locally, the infrastructure node itself must be trusted.
-
-Examples of node evidence can come from:
-
-```text
-cloud instance identity
-Kubernetes
-TPM
-platform-specific attestors
-```
-
-Conceptually:
-
-```text
-Node
- |
- | proves platform identity
- v
-SPIRE Server
- |
- | node accepted
- v
-SPIRE Agent becomes trusted delegate
-```
-
----
-
-# 17. Workload attestation
-
-Once the node is trusted, the local SPIRE Agent identifies workloads.
-
-Possible selectors:
-
-```text
-unix:uid
-unix:gid
-k8s:namespace
-k8s:service-account
-container metadata
-process attributes
-```
-
-Then policy maps selectors to SPIFFE IDs.
-
-Example concept:
-
-```text
-namespace = agents
-service_account = travel-agent
-        |
-        v
-spiffe://corp.example/prod/agent/travel
-```
-
-This is the key transition:
-
-```text
-runtime evidence -> cryptographic identity
-```
-
----
-
-# 18. Registration entries
-
-SPIRE needs policy describing which workloads receive which identities.
-
-Conceptually:
-
-```text
-SPIFFE ID:
-spiffe://corp.example/prod/agent/travel
-
-selectors:
-k8s:ns:agents
-k8s:sa:travel-agent
-```
-
-Avoid overly broad selectors such as:
-
-```text
-namespace = default
-```
-
-if many unrelated workloads share it.
-
-Attestation quality determines identity quality.
-
----
-
-# 19. Identity issuance
-
-A simplified flow:
-
-```text
-1. SPIRE Agent attests node
-2. workload starts
-3. workload connects to Workload API
-4. SPIRE Agent attests workload
-5. selectors match registration policy
-6. workload receives SVID
-7. workload uses SVID
-8. SVID rotates automatically
-```
-
-The application should consume the identity dynamically rather than copy it into a static secret file forever.
-
----
-
-# 20. Automatic rotation
-
-One of SPIFFE's most important operational properties is short-lived credentials.
-
-The SPIFFE documentation describes private keys and corresponding certificates as short lived and automatically rotated, with workloads able to receive updated identity and bundle material before expiry. citeturn0search6turn0search1
-
-This changes operations from:
-
-```text
-create secret
-store secret
-distribute secret
-rotate manually
-```
-
-to:
-
-```text
-attest workload
-stream short-lived identity
-renew automatically
-```
-
----
-
-# 21. Streaming identity updates
-
-The Workload API is not merely:
-
-```text
-GET certificate once
-```
-
-It supports streaming updates.
-
-Changes can include:
-
-```text
-SVID rotation
-bundle rotation
-federated bundle updates
-identity changes
-```
-
-Applications should be designed to consume updates rather than assume identity material never changes. citeturn0search0
-
----
-
-# 22. Authentication is not authorization
-
-SPIFFE proves:
-
-```text
-caller =
-spiffe://corp.example/prod/agent/travel
-```
-
-It does **not** automatically mean:
-
-```text
-caller may transfer $10,000
-```
-
-Architecture:
-
-```text
-SPIFFE/SPIRE
-   |
-   | authenticated workload
-   v
-SPIFFE ID
-   |
-   v
-Authorization Policy
-   |
-   +--> OpenFGA
-   +--> Cedar
-   +--> OPA
-   +--> custom PDP
-```
-
-SPIFFE answers **who**.
-
-Authorization answers **what may they do**.
-
----
-
-# 23. Connecting logical agent identity to workload identity
-
-From the beginner track:
-
-```text
-agent:travel-booking
-```
-
-is a governed logical identity.
-
-At runtime:
-
-```text
-spiffe://corp.example/prod/agent/travel-booking
-```
-
-is the workload identity.
-
-Registry:
-
-```yaml
-agent_id: agent:travel-booking
-approved_workloads:
-  - spiffe://corp.example/prod/agent/travel-booking
-```
-
-Then a gateway can require:
-
-```text
-logical actor == agent:travel-booking
+Authenticated(peer, expected_id, bundle, time, lifecycle)
 AND
-runtime workload == approved SPIFFE ID
+Authorized(authenticated_id, action, resource, policy_version)
 ```
 
-This prevents a stolen logical identifier from being enough.
+Northstar allows the booking agent to `charge` only `payment:booking-1042`. A partner research workload can authenticate through its federated bundle and still receive `resource_not_authorized`. Federation expands verifiable identity, not business authority.
 
----
+Policy uses the authenticated SPIFFE ID returned by verification—not a caller-supplied `agent_id`, certificate common name, unverified claim, network-received pod label, or model role.
 
-# 24. Agent-to-tool mTLS
+## 6. Architecture patterns
 
-Production pattern:
+| Pattern | Strengths | Limitations | Best fit |
+| --- | --- | --- | --- |
+| Native Workload API SDK | rotation updates, exact identity-aware TLS/JWT | app changes; language maturity differs | security-sensitive services |
+| Local proxy or sidecar | legacy app uses conventional interfaces | proxy may collapse multiple apps; socket is critical | brownfield migration |
+| Service mesh/SDS | centralized traffic policy and transparent mTLS | mesh identity is not resource authorization | broad Kubernetes estates |
+| Identity-aware gateway | centralized verification/token exchange | high-value enforcement point; narrowed end-to-end context | boundary translation |
+| Cloud workload federation | short-lived cloud credentials | provider-specific subject/audience policy | managed cloud APIs |
+| Secret-manager bootstrap | useful for non-SPIFFE systems | still needs initial identity; often pull rotation | transitional environments |
 
-```text
-Travel Agent
-SPIFFE ID:
-.../agent/travel
-      |
-      | X.509-SVID
-      | mTLS
-      v
-Payment Tool
-SPIFFE ID:
-.../tool/payment
-```
+Avoid adding SPIFFE when an existing managed workload identity already meets the threat model and portability needs. Do not add a second identity control plane without an owner, reliability budget, incident process, and clear benefit.
 
-The payment tool:
+## 7. Technology landscape
 
-1. validates the certificate chain;
-2. extracts the SPIFFE ID;
-3. verifies expected trust domain;
-4. passes the authenticated principal to authorization.
+| Technology | Role | Selection guidance |
+| --- | --- | --- |
+| SPIFFE specifications | vendor-neutral identity, SVID, bundle, API, endpoint, federation | source of protocol guarantees |
+| SPIRE | production attestation, registration, issuance, federation | default open-source implementation to evaluate |
+| `go-spiffe` | official Go Workload API, SVID source, mTLS, bundle library | strongest native Go path ([repository](https://github.com/spiffe/go-spiffe)) |
+| Java client | officially maintained client path referenced by SPIRE | validate release compatibility in [SPIRE](https://github.com/spiffe/spire) |
+| Python `spiffe` | community package, not officially maintained | evaluate maintenance/API compatibility ([PyPI](https://pypi.org/project/spiffe/)) |
+| Envoy SDS / service mesh | infrastructure delivery and rotation | retain exact application authorization |
+| SPIRE Controller Manager | Kubernetes-native registration reconciliation | protect change control and selector quality |
+| SPIRE examples | maintained integration examples | reference, not production defaults ([repository](https://github.com/spiffe/spire-examples)) |
 
-Do not use the certificate's display fields as your policy identity when the SPIFFE ID is the intended principal.
+As of September 2026, the current SPIRE release line is 1.15; confirm the exact version and security notes on the [official releases page](https://github.com/spiffe/spire/releases). Pin production images by digest and test upgrades rather than copying an old tutorial tag.
 
----
+## 8. State of the art
 
-# 25. Kubernetes architecture
+**Established:** short-lived X.509-SVID mTLS, local attestation-backed Workload API access, automated rotation/bundles, selector-based Kubernetes/cloud/Unix attestation, SDK or proxy integration, and authorization after authentication.
 
-Typical deployment:
+**Evolving:** cross-domain and cloud federation, Kubernetes-native registration reconciliation, stronger hardware/cloud node evidence, freshness telemetry, and SPIFFE Broker API/Endpoint work for intermediated delivery.
 
-```text
-Kubernetes Cluster
-|
-+-- SPIRE Server
-|
-+-- Node A
-|   |
-|   +-- SPIRE Agent (DaemonSet)
-|   |
-|   +-- travel-agent Pod
-|       SA: travel-agent
-|
-+-- Node B
-    |
-    +-- SPIRE Agent
-    |
-    +-- payment-tool Pod
-        SA: payment-tool
-```
+**Emerging:** WIT-SVID support is optional and incubating in the current Workload API specification. Validate interoperability, threat assumptions, libraries, and lifecycle semantics before adoption.
 
-Workload selectors can use Kubernetes metadata.
+**Open problems:** binding a governed AI-agent version to ephemeral runtime evidence; preserving user delegation through hops; revoking authority faster than issued lifetime; continuously measuring selector ambiguity and federation blast radius; and proving approved model/tools/policy/code rather than only a service account.
 
-This enables identity independent of:
+## 9. Worked Northstar trace
 
-```text
-pod IP
-pod name
-node IP
-```
+1. A pod starts on `node-a` with namespace `travel`, service account `booking-agent`, and approved image digest.
+2. The local agent identifies the process and emits trusted selectors.
+3. Selectors and parent match exactly `entry:booking-agent:v3`.
+4. The server issues short-lived X.509- and JWT-SVIDs; caller-requested names are ignored.
+5. The client applies a full-state update and caches SVIDs plus the bundle.
+6. The payment API validates chain, profile, time, URI SAN, bundle, and lifecycle against the exact expected ID.
+7. Policy permits `charge` only on `payment:booking-1042`.
+8. The gateway records reason, policy, bundle/entry versions, evidence IDs, and credential digest.
+9. Rotation changes key/certificate while the SPIFFE ID remains stable.
+10. A removal update omits the SVID; the client erases and stops using it.
 
-which are ephemeral.
+## 10. Implementation and experiments
 
----
+[lab.py](lab.py) provides a strict parser, selector-matching `WorkloadAPI`, fixed-key `DeterministicIssuer`, full-state cache, X.509/JWT `WorkloadGateway`, unsafe baseline, 20 labelled cases, metrics, and release gate. It logs SHA-256 digests, never raw JWTs, keys, or certificates. The fixed clock is for reproducibility; production uses a trustworthy clock and monitors skew.
 
-# 26. Sidecar/proxy versus native integration
+### A. Selector precision
 
-Two broad integration models:
+Run valid selectors, remove the image selector, change namespace, and add a second matching registration. Observe `svids_issued`, `registration_not_found`, and `registration_ambiguous`. Deny-on-ambiguity is a security property.
 
-## Native
+### B. Bundle rotation
 
-Application consumes Workload API directly.
+Verify a generation-2 SVID using old-only (deny), overlap old+new (allow), and new-only after drain (allow). The identity remains stable while verification material changes.
 
-```text
-application
-    |
-    v
-Workload API
-```
+### C. X.509 versus JWT-SVID
 
-Pros:
+Change a JWT audience while keeping its subject/signature valid. Then present an X.509-SVID for the wrong exact peer. Both fail: “signed” is not a complete policy.
 
-```text
-explicit identity handling
-fine control
-no proxy dependency
-```
+### D. Federation versus access
 
-Cons:
+Authenticate `RESEARCH_ID` through the partner bundle. Payment remains denied. A narrow `research:read` rule can enable only the intended resource.
 
-```text
-application integration work
-```
+## 11. Evaluation
 
-## Proxy / service mesh
+The dataset has 20 attempts: 2 expected valid and 18 expected blocked, spanning attestation, selectors, endpoint locality, X.509 profile/time/trust, JWT key/audience/time, lifecycle, rotation, federation, and resource scope.
 
-```text
-application
-    |
-    v
-Envoy / mesh
-    |
-    v
-SPIFFE identity
-```
+| Metric | Population | Numerator | Direction |
+| --- | --- | --- | --- |
+| outcome accuracy | all 20 | decisions matching labels | higher |
+| invalid acceptance | 18 blocked cases | blocked cases allowed | zero |
+| valid work blocked | 2 valid cases | valid cases denied | zero |
+| authorization violation | two policy-negative cases | forbidden actions allowed | zero |
+| stale-credential acceptance | expired, stale-bundle, removed, expired-JWT | stale cases allowed | zero |
 
-Pros:
+The unsafe baseline reads identity-shaped data but skips trust, exact peer, time, lifecycle, and authorization, so it accepts all 18 invalid attempts. The hardened path matches all 20 and passes. These are fixture results—not performance benchmarks or production proof.
 
-```text
-transparent mTLS
-less application code
-```
+Production evaluation also measures issuance latency, renewal lead time, API availability, bundle age, overlap, attestation denial, ambiguity, expiry headroom, policy-denial slices, and recovery time. Report percentiles and slices; never present simulated fixed durations as latency.
 
-Cons:
+## 12. Failure modes
 
-```text
-proxy/mesh complexity
-identity may be less visible to application
-```
-
-SPIFFE's ecosystem includes projects such as Envoy and Istio with SPIFFE support. citeturn0search7
-
----
-
-# 27. Federation
-
-Suppose:
-
-```text
-Company A
-spiffe://a.example
-
-Company B
-spiffe://b.example
-```
-
-By default they have separate trust domains.
-
-Federation allows them to exchange the public trust material needed to validate each other's SVIDs.
-
-```text
-a.example bundle <----> b.example bundle
-```
-
-SPIFFE Federation standardizes secure retrieval and maintenance of foreign trust-domain bundles. citeturn0search3
-
----
-
-# 28. Federation is not authorization
-
-Federation means:
-
-> I can cryptographically verify identities issued by this other trust domain.
-
-It does not mean:
-
-> I authorize all of them.
-
-Example:
-
-```text
-authenticated:
-spiffe://partner.example/agent/research
-
-authorization:
-only document:public may be read
-```
-
-Trust and privilege remain separate.
-
----
-
-# 29. Federation for multi-agent ecosystems
-
-Federation becomes relevant when:
-
-```text
-enterprise agent
-    |
-    v
-partner agent
-    |
-    v
-external tool
-```
-
-Each organization can preserve its own identity authority.
-
-A policy can then reason about:
-
-```text
-trust domain
-specific SPIFFE ID
-logical agent
-delegated task
-resource
-```
-
-This is more scalable than sharing one secret across organizations.
-
----
-
-# 30. Cloud federation and keyless access
-
-SVIDs can also be exchanged for or used to obtain access to external platforms rather than provisioning additional static credentials.
-
-SPIFFE documents patterns for authenticating workloads to AWS and HashiCorp Vault using SPIRE-issued identity. citeturn0search11
-
-This enables:
-
-```text
-workload attestation
-      |
-      v
-SPIFFE identity
-      |
-      v
-federation / token exchange
-      |
-      v
-cloud access
-```
-
-instead of:
-
-```text
-long-lived cloud access key
-```
-
----
-
-# 31. SPIFFE and agent credentials
-
-SPIFFE does not replace every credential.
-
-An agent may still need:
-
-```text
-OAuth token for SaaS
-delegated user token
-database token
-cloud role
-```
-
-But SPIFFE can provide the workload identity used to obtain those credentials.
-
-Pattern:
-
-```text
-Agent Workload
-     |
-     | SPIFFE identity
-     v
-Credential Broker / STS
-     |
-     | scoped short-lived token
-     v
-Tool / Cloud / SaaS
-```
-
-This is much safer than storing every downstream secret inside the agent.
-
----
-
-# 32. Security boundaries
-
-SPIFFE/SPIRE security depends on:
-
-```text
-trust-domain signing authority
-node attestation
-workload attestation
-SPIRE Agent integrity
-Workload API socket permissions
-registration policy
-selector quality
-bundle distribution
-```
-
-A bad selector can undermine otherwise excellent cryptography.
-
-Example:
-
-```text
-any pod in namespace agents
-    ->
-payment-agent identity
-```
-
-may be dangerously broad.
-
----
-
-# 33. Workload API socket security
-
-Because the Workload API relies on local/out-of-band caller identification, the endpoint itself is sensitive.
-
-Protect:
-
-```text
-Unix socket access
-host filesystem
-container mounts
-privileged containers
-host PID access
-SPIRE Agent
-```
-
-Do not casually mount the SPIRE socket into unrelated workloads.
-
----
-
-# 34. JWT audience design
-
-Bad:
-
-```text
-aud = production
-```
-
-Better:
-
-```text
-aud = payment-api
-```
-
-or:
-
-```text
-aud = spiffe://corp.example/prod/tool/payment
-```
-
-The JWT-SVID specification explicitly discourages overly broad audiences because compromise of one audience member can increase impersonation risk. citeturn0search9
-
----
-
-# 35. Identity and observability
-
-Include SPIFFE identity in traces and security events:
-
-```json
-{
-  "logical_agent": "agent:travel-booking",
-  "workload_identity": "spiffe://corp.example/prod/agent/travel",
-  "tool": "payment.create",
-  "decision": "allow",
-  "trace_id": "..."
-}
-```
-
-Do not log:
-
-```text
-private key
-full bearer JWT
-```
-
-Identity should improve observability without leaking credentials.
-
----
-
-# 36. Common anti-patterns
-
-### SPIFFE ID stored as a secret
-
-It is an identifier, not proof.
-
-### One shared SVID for many unrelated workloads
-
-Destroys workload-level accountability.
-
-### Broad selectors
-
-Weakens attestation.
-
-### Long-lived copied certificate files
-
-Defeats rotation.
-
-### Trusting any identity in the trust domain
-
-Authentication is not authorization.
-
-### JWT-SVID with huge audience
-
-Increases replay/blast radius.
-
-### Static trust bundle forever
-
-Breaks key rotation and revocation handling.
-
-### Mounting Workload API everywhere
-
-Expands local identity attack surface.
-
-### Encoding pod IDs in stable policy
-
-Creates brittle authorization.
-
-### Treating logical agent and workload as identical
-
-Loses governance/runtime separation.
-
----
-
-# 37. Production design checklist
-
-## Trust domain
-
-- What boundary does it represent?
-- Are prod and non-prod separated appropriately?
-- Is federation needed?
-
-## SPIFFE IDs
-
-- Are names semantic and stable?
-- Do they avoid transient infrastructure IDs?
-- Can authorization policy understand them?
-
-## Attestation
-
-- How are nodes attested?
-- How are workloads attested?
-- Are selectors narrow enough?
-- Can a neighboring workload satisfy them?
-
-## SVID
-
-- X.509 or JWT?
-- What lifetime?
-- Does the application handle rotation?
-- Are JWT audiences narrow?
-
-## Workload API
-
-- Who can reach the socket?
-- Is it mounted only where required?
-- Does the application consume updates?
-
-## Authorization
-
-- How does SPIFFE ID map to logical agent?
-- Which PDP evaluates privileges?
-- Is resource-level authorization enforced?
-
-## Operations
-
-- How quickly can identity be revoked?
-- Are bundle rotations tested?
-- Is federation monitored?
-- Are identity events observable?
-
----
-
-# 38. Practical notebook
-
-The accompanying notebook is designed as an **executable architecture lab**.
-
-It covers:
-
-1. SPIFFE ID parsing and validation;
-2. trust-domain design;
-3. logical-agent-to-workload mappings;
-4. simulated node/workload attestation;
-5. selector-based identity assignment;
-6. short-lived SVID modeling;
-7. certificate generation for X.509-SVID-like lab identities;
-8. SPIFFE URI SAN inspection;
-9. local mTLS client/server identity;
-10. authorization from authenticated SPIFFE ID;
-11. JWT-SVID claim modeling and audience checks;
-12. rotation;
-13. trust bundles;
-14. federation reasoning;
-15. Kubernetes registration examples;
-16. Docker/SPIRE command walkthroughs;
-17. adversarial selector tests;
-18. enterprise exercises.
-
-The Python sections can run locally. The SPIRE CLI/Docker sections are provided as reproducible environment exercises for machines with Docker installed.
-
----
-
-# 39. Tooling landscape
-
-SPIFFE is an interoperability standard with a growing ecosystem.
-
-The official ecosystem overview currently lists SPIRE as supporting X.509/JWT SVIDs, attestation, Workload API, SDS, federation, OIDC federation, PKI integration, Kubernetes, VM/bare-metal and serverless environments. It also lists integrations/implementations involving projects and platforms such as Istio, Envoy, Dapr, cert-manager, AWS IAM Roles Anywhere and GCP Workload Identity Federation. citeturn0search7
-
-For this curriculum, **SPIRE** is the reference implementation because it exposes the architecture most directly.
-
----
-
-# 40. Key takeaways
-
-1. SPIFFE standardizes workload identity; SPIRE implements it.
-2. A SPIFFE ID identifies a workload but is not itself proof.
-3. SVIDs provide cryptographic proof of SPIFFE identity.
-4. X.509-SVIDs are the preferred path for workload mTLS.
-5. JWT-SVIDs help at L7 boundaries but require careful audience/replay handling.
-6. The Workload API solves identity bootstrap without application secrets.
-7. Attestation quality is as important as certificate quality.
-8. Credentials should be short lived and rotate automatically.
-9. Authentication through SPIFFE must still feed an authorization layer.
-10. Logical agent identity should be mapped to—not confused with—runtime workload identity.
-11. Federation extends verifiable trust, not privilege.
-12. SPIFFE provides a strong foundation for zero-standing-credential agent architectures.
-
----
-
-# References
-
-- SPIFFE Standard  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe/
-- SPIFFE Concepts  
-  https://spiffe.io/docs/latest/spiffe/concepts/
-- SPIFFE Workload API  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/
-- SPIFFE Workload Endpoint  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_endpoint/
-- X.509-SVID Specification  
-  https://spiffe.io/docs/latest/spiffe-specs/x509-svid/
-- JWT-SVID Specification  
-  https://spiffe.io/docs/latest/spiffe-specs/jwt-svid/
-- SPIFFE Federation  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/
-- Working with SVIDs  
-  https://spiffe.io/docs/latest/deploying/svids/
-- SPIRE Use Cases  
-  https://spiffe.io/docs/latest/spire-about/use-cases/
-- SPIFFE Ecosystem Overview  
-  https://spiffe.io/docs/latest/spiffe-about/overview/
-- Keyless Authentication Patterns  
-  https://spiffe.io/docs/latest/keyless/
-
----
-
-# Next course
-
-## Intermediate 02 — OAuth 2.x and OpenID Connect for Agents
-
-Next we move from workload identity to delegated/API identity:
-
-```text
-OAuth clients
-authorization servers
-access tokens
-OIDC
-audiences/scopes
-client credentials
-authorization code + PKCE
-token exchange
-sender-constrained tokens
-DPoP
-mTLS-bound tokens
-workload-to-OAuth federation
-delegated user authority
-agent-on-behalf-of flows
-```
+| Failure | Why it fails | Control |
+| --- | --- | --- |
+| shared API key | no runtime binding; replay window | attested short-lived SVID |
+| caller chooses SPIFFE ID | claim becomes authority | trusted selectors/registration |
+| one broad selector | workloads collide | conjunctive selectors and ambiguity alarms |
+| cross-host API socket | breaks local caller binding | node-local endpoint and OS permissions |
+| trust any URI SAN | wrong workload authenticates | exact expected ID |
+| use certificate CN | not the SPIFFE profile | validate URI SAN/profile |
+| signature-only JWT | wrong audience/time/key accepted | bundle and claim profile |
+| follow `jku` | redirected trust and SSRF risk | configured bundle keys only |
+| append stream updates | removed credentials persist | replace complete snapshots |
+| federation means allow | external identity gains unintended access | local authorization |
+| log tokens/keys | telemetry leaks credentials | digests and metadata |
+| retain all roots | stale compromise remains trusted | measured retirement |
+| mesh policy equals app policy | misses resource context | application PEP/PDP |
+
+## 13. Production upgrade
+
+### Control plane
+
+- run SPIRE Server HA with supported datastore and protected signing keys;
+- align trust domains to administrative/security boundaries;
+- choose node attestors for the threat model;
+- reconcile registrations through reviewed IaC/controller workflows;
+- version/audit selectors, TTL policy, bundles, and federation;
+- monitor agent/server health, renewal, ambiguity, and expiry headroom; and
+- test backup, restore, signer rotation, disaster recovery, and migration.
+
+### Workloads
+
+- prefer official Go/Java clients where available;
+- use rotating SVID sources rather than copying credentials to files;
+- protect the local endpoint and restrict socket access;
+- configure exact peer IDs or narrow match policies;
+- fail closed on missing/stale bundle, malformed ID, or policy outage;
+- treat attestation/policy denial as terminal and bound transient retries; and
+- never put keys or SVIDs in model context, logs, task state, or memory.
+
+### Lifecycle and federation
+
+- derive TTL/renewal from measured outage, revocation, and rotation requirements;
+- stop use on Workload API redaction;
+- propagate logical-agent suspension into registration and resource policy;
+- verify that issuance stopped, caches changed, and policies deny;
+- allowlist partner domains/bundle sources through controlled configuration;
+- constrain each partner identity to local actions/resources; and
+- monitor bundle age/key change with an emergency removal owner.
+
+### Optional real SPIRE path
+
+The prior container file referenced missing configuration and could not start; it is removed rather than advertised as runnable. For a real exercise:
+
+1. complete [SPIRE 101](https://spiffe.io/docs/latest/try/spire101/);
+2. inspect current [server configuration](https://spiffe.io/docs/latest/deploying/spire_server/) and pin the tested release/digests;
+3. create the booking-agent registration using namespace, service-account, and image selectors;
+4. fetch credentials through an officially supported SDK where possible;
+5. implement exact peer authorization and observe rotation; and
+6. map live outputs into this lab’s decision/evaluation contract.
+
+## 14. Exercises and review
+
+1. Add `research:read` for `RESEARCH_ID` on `catalog:destinations`; prove payment stays denied.
+2. Add a Unix workload with UID and executable selectors.
+3. Add JWT not-yet-valid and maximum-lifetime cases.
+4. Implement old+new then new-only bundle retirement.
+5. Diagnose a rotation rollout failing on half the fleet using bundle versions and root digests.
+6. Repair two overlapping production registrations with the narrowest selector change.
+7. Diagnose a client that merged instead of replacing full-state updates.
+8. Choose native SDK, sidecar, mesh, or gateway for a Go/Java/Python estate; document identity granularity and failure ownership.
+9. Design trust domains for two business units and a regulated payments boundary.
+10. Define how logical-agent suspension disables issuance and downstream access.
+
+Review questions: Why fail closed on multiple registrations? What does a bundle establish—and not establish? Why is a valid partner SVID insufficient for payment? What does an omitted SVID mean in a later full-state update? Which facts must come from the attestor? When is JWT-SVID less suitable than X.509 mTLS? Why must rotation prove both issuance and verifier rollout?
+
+## 15. Summary
+
+- SPIFFE names workloads; SPIRE attests runtimes and delivers rotating SVIDs/bundles.
+- A workload never becomes trusted by declaring a SPIFFE ID.
+- Exact matching, local endpoint protection, and deny-on-ambiguity protect issuance.
+- Verification covers trust, profile, time, audience, exact peer, and lifecycle.
+- Workload API streams are complete state; removal means stop using old material.
+- Federation authenticates external identities but grants no automatic access.
+- Production readiness requires measured rotation, availability, revocation, observability, and ownership.
+
+## 16. Authoritative references
+
+### Standards
+
+- [SPIFFE specifications](https://spiffe.io/docs/latest/spiffe-specs/)
+- [SPIFFE ID](https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/)
+- [Trust Domain and Bundle](https://spiffe.io/docs/latest/spiffe-specs/spiffe_trust_domain_and_bundle/)
+- [X.509-SVID](https://spiffe.io/docs/latest/spiffe-specs/x509-svid/)
+- [JWT-SVID](https://spiffe.io/docs/latest/spiffe-specs/jwt-svid/)
+- [Workload API](https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/)
+- [Workload Endpoint](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_Endpoint.md)
+- [Federation](https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/)
+
+### Implementation and operations
+
+- [SPIRE concepts](https://spiffe.io/docs/latest/spire-about/spire-concepts/)
+- [Working with SVIDs](https://spiffe.io/docs/latest/deploying/svids/)
+- [SPIRE Server configuration](https://spiffe.io/docs/latest/deploying/spire_server/)
+- [SPIRE 101](https://spiffe.io/docs/latest/try/spire101/)
+- [SPIRE releases](https://github.com/spiffe/spire/releases)
+- [SPIRE repository](https://github.com/spiffe/spire)
+- [`go-spiffe`](https://github.com/spiffe/go-spiffe)
+- [SPIRE examples](https://github.com/spiffe/spire-examples)
+- [SPIRE use cases](https://spiffe.io/docs/latest/spire-about/use-cases/)
+- [Community Python `spiffe` package](https://pypi.org/project/spiffe/)
+
+## Next course
+
+Continue to [Agent Authentication with OAuth 2.0 and OpenID Connect](../02-oauth-oidc-for-agents/), where workload identity is represented or exchanged at API boundaries without confusing workload authentication, user delegation, and authorization.
