@@ -1,0 +1,67 @@
+{
+  "": {
+    "entityTypes": {
+      "Agent": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "tenantId": {"type": "String", "required": true},
+            "agentId": {"type": "String", "required": true},
+            "subjectId": {"type": "String", "required": true},
+            "taskId": {"type": "String", "required": true},
+            "workloadId": {"type": "String", "required": true}
+          },
+          "additionalAttributes": false
+        }
+      },
+      "Claim": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "tenantId": {"type": "String", "required": true},
+            "ownerId": {"type": "String", "required": true},
+            "version": {"type": "Long", "required": true}
+          },
+          "additionalAttributes": false
+        }
+      }
+    },
+    "commonTypes": {
+      "McpContext": {
+        "type": "Record",
+        "attributes": {
+          "tokenValid": {"type": "Boolean", "required": true},
+          "audience": {"type": "String", "required": true},
+          "taskId": {"type": "String", "required": true},
+          "taskActive": {"type": "Boolean", "required": true},
+          "toolDelegated": {"type": "Boolean", "required": true},
+          "scope": {"type": "String", "required": true},
+          "expectedResourceVersion": {"type": "Long", "required": true},
+          "riskLevel": {"type": "String", "required": true},
+          "amountCents": {"type": "Long", "required": true},
+          "currency": {"type": "String", "required": true},
+          "now": {"type": "Long", "required": true},
+          "policyVersion": {"type": "Long", "required": true},
+          "proposalDigest": {"type": "String", "required": true},
+          "approvalUsed": {"type": "Boolean", "required": true},
+          "approvalExpiresAt": {"type": "Long", "required": true},
+          "approvalProposalDigest": {"type": "String", "required": true},
+          "approvalSubjectId": {"type": "String", "required": true},
+          "approvalTenantId": {"type": "String", "required": true},
+          "approvalTaskId": {"type": "String", "required": true},
+          "approvalAgentId": {"type": "String", "required": true},
+          "approvalPolicyVersion": {"type": "Long", "required": true},
+          "approvalResourceVersion": {"type": "Long", "required": true}
+        },
+        "additionalAttributes": false
+      }
+    },
+    "actions": {
+      "ReadClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "McpContext"}}},
+      "UpdateClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "McpContext"}}},
+      "CreatePayment": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "McpContext"}}}
+    }
+  }
+}

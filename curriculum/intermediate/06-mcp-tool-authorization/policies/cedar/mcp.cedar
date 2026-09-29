@@ -1,34 +1,71 @@
 permit (
     principal is Agent,
-    action == Action::"CallClaimRead",
+    action == Action::"ReadClaim",
     resource is Claim
 )
 when {
-    principal.id == "claims-agent" &&
-    context.onBehalfOf == resource.owner &&
+    context.tokenValid &&
+    context.audience == "https://claims-mcp.northstar.example" &&
+    principal.tenantId == resource.tenantId &&
+    principal.subjectId == resource.ownerId &&
+    principal.taskId == context.taskId &&
+    principal.workloadId == "spiffe://northstar.example/claims/adjuster" &&
     context.taskActive &&
-    context.taskResource == resource.id
+    context.toolDelegated &&
+    context.scope == "claims:read"
 };
 
 permit (
     principal is Agent,
-    action == Action::"CallPaymentCreate",
+    action == Action::"UpdateClaim",
     resource is Claim
 )
 when {
-    principal.id == "claims-agent" &&
-    context.onBehalfOf == resource.owner &&
+    context.tokenValid &&
+    context.audience == "https://claims-mcp.northstar.example" &&
+    principal.tenantId == resource.tenantId &&
+    principal.subjectId == resource.ownerId &&
+    principal.taskId == context.taskId &&
+    principal.workloadId == "spiffe://northstar.example/claims/adjuster" &&
     context.taskActive &&
-    context.taskResource == resource.id &&
-    context.approved &&
-    context.amount <= context.approvedAmount
+    context.toolDelegated &&
+    context.scope == "claims:update" &&
+    context.expectedResourceVersion == resource.version
 };
 
-forbid (
-    principal,
-    action == Action::"CallPaymentCreate",
-    resource
+permit (
+    principal is Agent,
+    action == Action::"CreatePayment",
+    resource is Claim
 )
 when {
-    context.amount > context.approvedAmount
+    context.tokenValid &&
+    context.audience == "https://claims-mcp.northstar.example" &&
+    principal.tenantId == resource.tenantId &&
+    principal.subjectId == resource.ownerId &&
+    principal.taskId == context.taskId &&
+    principal.workloadId == "spiffe://northstar.example/claims/adjuster" &&
+    context.taskActive &&
+    context.toolDelegated &&
+    context.scope == "payments:create" &&
+    context.riskLevel != "high" &&
+    context.amountCents > 0 &&
+    context.amountCents <= 100000 &&
+    context.currency == "CAD" &&
+    !context.approvalUsed &&
+    context.approvalExpiresAt > context.now &&
+    context.approvalProposalDigest == context.proposalDigest &&
+    context.approvalSubjectId == principal.subjectId &&
+    context.approvalTenantId == principal.tenantId &&
+    context.approvalTaskId == principal.taskId &&
+    context.approvalAgentId == principal.agentId &&
+    context.approvalPolicyVersion == context.policyVersion &&
+    context.approvalResourceVersion == resource.version
+};
+
+forbid (principal, action, resource)
+when {
+    !context.tokenValid ||
+    !context.taskActive ||
+    !context.toolDelegated
 };

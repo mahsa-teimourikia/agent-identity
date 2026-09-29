@@ -1,1285 +1,518 @@
-# Intermediate 06 — Authorization for MCP & Tool Servers
+# Intermediate 06 — Authorization for MCP and Tool Servers
 
-![Authorization for MCP & Tool Servers](images/mcp-authorization.png)
+> **Goal:** build and attack-test an HTTP MCP protected resource that authenticates an audience-bound access token, preserves human, agent, client, workload, and task identities, independently authorizes tool discovery, invocation, exact arguments, target resources, approvals, and downstream delegation, and executes consequential effects exactly once under current policy.
 
-> **Goal:** secure the full agent-to-tool authorization path: discovery, OAuth acquisition, MCP resource access, tool invocation, target-resource access, downstream delegation, step-up and audit.
+**Level:** intermediate · **Time:** 3–4 hours · **Format:** reading + executed notebook + reusable lab + policy exercises
 
-MCP has evolved quickly. This course targets the **2026-07-28 MCP specification generation**, whose authorization hardening includes OAuth issuer validation, authorization-server credential isolation, scope step-up clarifications, and a move toward Client ID Metadata Documents (CIMD). It also covers the stable **Enterprise-Managed Authorization (EMA)** extension for centrally provisioned enterprise MCP access.
-
----
+This course targets the **2026-07-28 MCP specification generation** and the official Python SDK 2.2 line. MCP defines how a client discovers and calls a server; it does not make every advertised tool safe. A production server still needs OAuth resource-server controls, business authorization, schema enforcement, current-state checks, safe delegation, and auditable execution semantics.
 
 ## Learning outcomes
 
-You will learn to:
+By the end, you can:
 
-- distinguish MCP client, protected MCP resource, authorization server and downstream API identities;
-- understand OAuth Protected Resource Metadata;
-- validate access-token issuer, audience/resource, expiry and scopes;
-- understand Resource Indicators and why audience restriction matters;
-- avoid token passthrough;
-- prevent confused-deputy attacks;
-- separate server authorization, tool authorization and target-resource authorization;
-- model per-server and per-tool authorization;
-- authorize tool discovery as well as tool invocation;
-- preserve user and agent identities;
-- implement task-bound agent permissions;
-- perform step-up for sensitive tools;
-- understand scope accumulation during MCP step-up;
-- understand Client ID Metadata Documents vs legacy Dynamic Client Registration;
-- understand authorization-server issuer validation;
-- isolate client credentials by authorization-server issuer;
-- understand Enterprise-Managed Authorization;
-- secure downstream OAuth without leaking credentials through the MCP client;
-- use URL-mode elicitation for server-managed third-party authorization;
-- apply dynamic revocation to MCP sessions/actions;
-- generate audit evidence for every sensitive tool call.
+- separate the MCP client, protected resource, authorization server, tool, target resource, and downstream API;
+- explain why MCP authorization applies to HTTP transport and why stdio has a different credential boundary;
+- publish OAuth Protected Resource Metadata and return useful `WWW-Authenticate` challenges;
+- validate token signature, profile, issuer, audience/resource, time bounds, client, scopes, and identity bindings;
+- keep requester, subject, logical agent, OAuth client, workload, task, and downstream actor identities distinct;
+- authorize discovery, invocation, strict arguments, target objects, and effects as separate decisions;
+- prevent token passthrough, audience confusion, confused-deputy behavior, state-handle theft, and tool-name collisions;
+- bind a one-time approval to the canonical action, arguments, identities, versions, expiry, and operation ID;
+- re-authorize immediately before a side effect and reconcile unknown outcomes without duplicate execution;
+- attenuate downstream tokens by audience, scope, actor, task, and lifetime;
+- validate tool outputs before returning them to an agent or model;
+- distinguish OAuth scope step-up from business-policy denial; and
+- evaluate a gateway with a labeled attack matrix and a zero-invalid-acceptance release gate.
+
+## Prerequisites
+
+Complete Intermediate 02–05 or be comfortable with OAuth resource indicators, delegated tokens, fine-grained authorization, and continuous authorization. You need Python 3.10+ and `uv` for the lab. OPA is optional for the Rego exercise.
+
+## Start here
+
+```bash
+uv sync
+uv run python curriculum/intermediate/06-mcp-tool-authorization/lab.py
+uv run pytest curriculum/intermediate/06-mcp-tool-authorization/tests -q
+```
+
+Open [`mcp_authorization.ipynb`](mcp_authorization.ipynb) for the guided investigation. The notebook imports [`lab.py`](lab.py); the tests and notebook therefore exercise the same implementation.
 
 ---
 
-# 1. MCP authorization is an end-to-end problem
+## 1. The trust boundary is larger than `tools/call`
 
-A simplistic model is:
-
-```text
-Agent -> MCP Server -> Tool
-```
-
-A production trust model is closer to:
+A simplified diagram hides the important principals:
 
 ```text
-Human/User
-    |
-    v
-Agent / MCP Client
-    |
-    | OAuth access token
-    v
-Protected MCP Resource
-    |
-    +--> Tool authorization
-    |
-    +--> Target resource authorization
-    |
-    +--> Downstream API
-              |
-              +--> separate delegated credential
+Human requester / resource owner
+             |
+             | bounded business intent
+             v
+Logical agent inside an authenticated MCP client
+             |
+             | access token for the MCP resource
+             v
+HTTP MCP protected resource  <---- authorization server
+             |
+             +-- tool discovery authorization
+             +-- tool invocation authorization
+             +-- argument and target-resource authorization
+             +-- approval and current-state authorization
+             |
+             v
+Business adapter / downstream API
+             |
+             +-- new audience-limited delegated credential
+             +-- idempotent effect and execution receipt
 ```
 
-There are multiple security questions:
+The server must answer all of these questions from verified or authoritative data:
 
-```text
-Is the client authorized to access this MCP server?
-May this agent invoke this tool?
-May the represented user perform the action?
-May the tool access this target object?
-Does the task permit it?
-Does the downstream API accept this authority?
-```
+1. Is this token authentic, current, and intended for this MCP resource?
+2. Which client, workload, agent, task, tenant, and user are involved?
+3. May that combination discover or call this tool?
+4. Are these exact arguments valid and within the task grant?
+5. Is the target object owned by the right tenant and subject?
+6. Is current policy still permissive at commit time?
+7. Does a consequential action have a fresh approval for this exact proposal?
+8. What narrower authority may be delegated downstream?
+9. Did the side effect happen once, not zero or twice?
 
-One bearer token check does not answer all of them.
+A valid bearer token answers only part of question 1.
 
----
+## 2. Transport boundary: HTTP is not stdio
 
-# 2. Current MCP authorization architecture
+The MCP authorization specification is defined for HTTP-based transports. An HTTP MCP server that chooses authorization should follow the OAuth protected-resource pattern. A stdio server should not start an HTTP OAuth flow; its launcher supplies credentials through the local process environment or another operating-system boundary.
 
-For HTTP-based protected MCP servers, OAuth authorization is built around the protected-resource model.
+| Transport | Authentication boundary | Main operational risks |
+|---|---|---|
+| HTTP | OAuth access token at the protected resource | token audience, discovery, redirects, SSRF, issuer mix-up, proxy routing |
+| stdio | local launcher, process identity, environment, filesystem | malicious local server, environment leakage, unsafe proxying, weak sandboxing |
 
-```text
-MCP Client
-    |
-    | discover resource metadata
-    v
-MCP Server / Protected Resource
-    |
-    | authorization_servers
-    v
-Authorization Server
-    |
-    | access token for MCP resource
-    v
-MCP Client
-    |
-    | Authorization: Bearer ...
-    v
-MCP Server
-```
+An HTTP-to-stdio proxy joins both risk sets. Authenticate at the HTTP edge, define which local server binary and arguments may run, scrub the environment, constrain filesystem/network access, and never turn arbitrary client input into a process command.
 
-The MCP server is an OAuth **resource server**.
+## 3. MCP OAuth resource-server flow
 
-Do not make it accept arbitrary tokens merely because they came from a trusted identity provider.
-
----
-
-# 3. Protected Resource Metadata
-
-MCP uses OAuth 2.0 Protected Resource Metadata, standardized by RFC 9728.
-
-A resource exposes metadata such as:
+The MCP server is the **OAuth resource server**. The client learns which authorization server can issue a suitable token from RFC 9728 Protected Resource Metadata.
 
 ```json
 {
-  "resource":"https://claims-mcp.example",
-  "authorization_servers":[
-    "https://id.example"
-  ],
-  "scopes_supported":[
+  "resource": "https://claims-mcp.northstar.example",
+  "authorization_servers": ["https://id.northstar.example"],
+  "scopes_supported": [
+    "claims:search",
     "claims:read",
-    "claims:update"
-  ]
+    "claims:update",
+    "payments:create"
+  ],
+  "bearer_methods_supported": ["header"]
 }
 ```
 
-The current MCP Python SDK includes an RFC 9728 `ProtectedResourceMetadata` model with fields for authorization servers, scopes, JWKS, DPoP support and other protected-resource capabilities.
+The client includes the canonical MCP resource in authorization and token requests using the OAuth Resource Indicators `resource` parameter. The resource server accepts tokens intended for that same canonical resource.
 
----
+The OAuth 2.1 reference in MCP is still an IETF draft, so implementations must follow the MCP version they claim and the cited RFCs rather than treating “OAuth 2.1” as a finished, self-contained control set.
 
-# 4. WWW-Authenticate
+### Correct HTTP failures
 
-When authorization is required, the resource should return an HTTP authentication challenge.
-
-Conceptually:
+No usable token or an invalid token is an HTTP authentication failure:
 
 ```http
 HTTP/1.1 401 Unauthorized
-WWW-Authenticate: Bearer resource_metadata="..."
+WWW-Authenticate: Bearer resource_metadata="https://claims-mcp.northstar.example/.well-known/oauth-protected-resource/mcp"
 ```
 
-The client discovers how to authorize from the resource metadata.
+A valid token missing an obtainable scope can use a bounded scope challenge:
 
-For protected MCP access, do not hide OAuth failures inside a successful MCP tool result.
+```http
+HTTP/1.1 403 Forbidden
+WWW-Authenticate: Bearer error="insufficient_scope", scope="claims:read"
+```
 
----
+A tenant mismatch, inactive task, high-risk denial, stale approval, or forbidden resource is a business-policy denial—not an invitation to request broader OAuth scopes. Return 403 without suggesting that more privilege will fix an ineligible action.
 
-# 5. Access-token validation
+Do not hide HTTP authentication failures inside a successful MCP tool result.
 
-At minimum validate:
+## 4. Strict token validation
+
+The lab's `NorthstarTokenVerifier` implements the official Python SDK `TokenVerifier` protocol and produces an SDK `AccessToken`. It enforces:
 
 ```text
-signature
-issuer
-audience/resource
-expiry
-not-before where applicable
-required scope
-token profile
-revocation/current state where applicable
+alg = EdDSA
+typ = at+jwt
+trusted verification key
+iss = configured authorization server
+aud = canonical MCP protected resource
+required identity and task claims
+iat / nbf / exp are current
+short maximum lifetime
+requested per-tool scope
 ```
 
-Never:
+The SDK server also enables `validate_token_resource=True`. In production, use issuer-bound JWKS discovery and controlled key rotation. Never:
+
+- decode a JWT without verifying its signature;
+- fetch a verification key from an attacker-supplied `jku` or `x5u` header;
+- accept a token because its issuer and scope “look right” while ignoring audience;
+- put bearer tokens in URLs;
+- accept a token issued to a downstream API at the MCP server; or
+- forward the received MCP token to another service.
+
+## 5. Preserve every identity plane
+
+The reference context keeps these values separate:
+
+| Plane | Example | What it proves |
+|---|---|---|
+| subject/requester | `user:alice` | represented resource owner |
+| logical agent | `agent:claims-adjuster` | governed agent identity |
+| OAuth client | `client:claims-copilot` | registered client that acquired authority |
+| workload | `spiffe://northstar.example/claims/adjuster` | executing deployment |
+| task | `task:clm-100-review` | bounded business purpose |
+| tenant | `tenant:northstar` | isolation domain |
+| token ID | `at-001` | replay/evidence correlation, not raw-token storage |
+
+Do not derive a user by splitting a subject string, infer an agent from a tool name, or trust a caller-provided task independently of the verified token and task store. Each identity is compared with authoritative bindings. A token for Alice used by an unapproved workload is not equivalent to Alice acting through the approved claims agent.
+
+## 6. Discovery and invocation are separate gates
+
+`tools/list` is an information boundary. Filtering it reduces capability leakage and helps clients avoid presenting impossible actions. It is not an authorization grant.
+
+The lab's discovery method filters by:
+
+- current subject/client/workload state;
+- active task;
+- task-delegated tools; and
+- token scopes.
+
+Every `tools/call` then repeats authorization independently. Cached discovery results can outlive revocation or policy changes.
+
+The 2026-07-28 protocol can expose `Mcp-Method` and `Mcp-Name` request headers for routing. A gateway may use them as an optimization, but it must reject a mismatch with the JSON-RPC body. Header-only enforcement creates a routing-confusion bypass.
+
+Tool names are scoped to a server and are case-sensitive. An aggregator needs a stable server identity plus tool identity; server display names alone are not globally unique.
+
+## 7. Schema validity is necessary, not authority
+
+The SDK/tool definition's `inputSchema` describes shape. It does not prove that the caller owns the target claim.
+
+The reference tools use strict Pydantic models:
+
+- unknown fields are forbidden;
+- strings are not silently coerced from integers;
+- resource IDs follow a constrained format;
+- search limits are bounded;
+- currency is an explicit enum;
+- amounts have business bounds; and
+- writes require stable operation IDs and expected versions.
+
+Then the policy layer independently verifies resource existence, tenant, owner, task grant, version, current state, and approval.
+
+This distinction matters for “resource-less” search tools. An unrestricted search can become a cross-tenant enumeration API. `claim.search` searches only the caller's authorized task resources and caps the result size.
+
+## 8. State handles are capabilities with context
+
+Pagination, resumable tasks, and other opaque handles are security-sensitive. A random-looking string is insufficient. Persist a server-side record binding the handle to:
+
+```text
+subject + tenant + task + canonical query digest + expiry
+```
+
+The lab rejects a handle copied to another subject/task, reused with a changed filter, missing from the store, or expired. Use cryptographically random values in production; the deterministic lab value exists only to make results reproducible.
+
+## 9. Exact approval, not `approved: true`
+
+A boolean approval can be replayed for a different amount, target, payee, or action. The lab hashes a canonical proposal containing:
+
+```text
+tool + exact effect arguments + operation ID
+subject + tenant + agent + client + workload + task
+```
+
+The approval record additionally binds policy and resource versions, expiration, and single-use state. Changing CAD 125.00 to CAD 125.01 changes the proposal digest and invalidates the approval. A consumed approval cannot authorize a different operation.
+
+Approval does not override current policy. A newly high-risk state or revoked task still denies the action. Intermediate 07 deepens the risk and assurance model; this course establishes the exact transaction boundary that step-up must authorize.
+
+## 10. Re-authorize at the side-effect boundary
+
+The unsafe sequence is:
+
+```text
+authorize -> wait -> execute using the old decision
+```
+
+The lab executes:
+
+```text
+authenticate
+  -> strict parse
+  -> preflight authorize
+  -> optional planning/work
+  -> commit-time authorize against current state
+  -> validate tool output
+  -> persist operation receipt
+  -> consume approval
+  -> return result
+```
+
+If the task is revoked between preflight and commit, no effect occurs. Production implementations should make approval consumption, idempotency reservation, business effect, and execution receipt atomic when the storage system permits it, or use a durable saga/outbox with explicit reconciliation.
+
+### Unknown outcomes and idempotency
+
+A timeout does not prove failure. The downstream system may have committed before the response was lost. The safe rule is:
+
+1. bind a stable operation ID to the canonical request digest;
+2. persist the outcome/effect receipt;
+3. on an exact retry, reconcile and return the prior result;
+4. reject the same operation ID with changed content; and
+5. never mint a second effect merely because the transport retried.
+
+The lab injects a lost response after commit and proves the exact retry leaves the effect count at one.
+
+## 11. Downstream authorization without token passthrough
+
+The MCP token is for the MCP resource. Passing it to a business API:
+
+- violates audience separation;
+- hides the tool server as the actor;
+- increases bearer-token exposure; and
+- makes independent downstream policy difficult.
+
+Use token exchange, workload federation, or another brokered credential flow. The lab's exchange adapter allows only configured audiences, intersects scopes with both caller authority and target policy, preserves `sub` and an `act` identity, carries the task, and issues a 60-second result. It never forwards the source token.
+
+For a server that needs user authorization to an unrelated third party, URL-mode elicitation can let the server own that authorization relationship without asking the MCP client to reveal credentials. Bind the callback to the authenticated user and server-side transaction state.
+
+## 12. Tool outputs are untrusted input
+
+MCP tools can declare JSON Schema 2020-12 `outputSchema` and return `structuredContent`. A server or gateway should validate the structured result before exposing it to an agent/model. The lab rejects an injected, schema-invalid response with a 502-style tool failure.
+
+Output controls should also include:
+
+- size, item-count, and recursion limits;
+- explicit content types;
+- secret and sensitive-data detection;
+- safe rendering/escaping;
+- provenance for externally sourced content; and
+- separation between tool data and instructions to a model.
+
+Tool annotations such as read-only or destructive hints are metadata, not enforcement guarantees, unless the server that asserted them is independently trusted. The policy engine remains authoritative.
+
+## 13. Current MCP security threats
+
+### Confused deputy and consent
+
+A public MCP-facing proxy can become a deputy for a third-party authorization server. Bind authorization transactions to the correct client, user, redirect URI, PKCE verifier, state, issuer, and resource. Obtain meaningful per-client consent where the upstream relationship requires it.
+
+### OAuth metadata SSRF and DNS rebinding
+
+Discovery URLs and redirect chains can reach internal hosts. Apply URL allow/deny policy, resolve and validate every hop, constrain schemes and ports, block private/link-local/loopback destinations where inappropriate, and protect against DNS rebinding. Do not follow arbitrary redirects with credentials.
+
+### State-handle hijacking
+
+OAuth `state` and MCP resumable handles must be bound server-side to the authenticated user/session and transaction. A client-supplied handle alone is not proof of ownership.
+
+### Authorization-server mix-up
+
+Store the chosen authorization-server issuer with the transaction and validate the returned `iss` per RFC 9207 before token redemption. Isolate client credentials by exact issuer.
+
+### Redirect impersonation
+
+Loopback/localhost callbacks can be intercepted by another local process. Follow native-app redirect guidance, use PKCE, prefer claimed HTTPS or platform-specific redirects where supported, and validate exact redirect URIs.
+
+### Scope minimization abuse
+
+An attacker can attempt to turn repeated 403 challenges into automatic privilege growth. Accumulate only server-requested, policy-approved scopes, cap retries, show consequential changes to the user, and never interpret an ordinary policy denial as a scope request.
+
+### Local server compromise
+
+Treat third-party stdio servers like installed code. Pin provenance, inspect manifests, isolate files/network/secrets, show executable and argument changes, and require re-consent after material upgrades.
+
+### Supply-chain and tool-definition drift
+
+Inventory server version, package digest, tool schemas, annotations, and policy compatibility. Reject an unexpected schema or toolset version before use. Sign and scan release artifacts and stage updates through canaries.
+
+## 14. Client registration and enterprise control
+
+Current MCP clients should support Client ID Metadata Documents (CIMD). Dynamic Client Registration remains a compatibility option, not the default trust answer for every server. A server or authorization service needs a trust policy for which client metadata URLs and redirect URIs it accepts; successful metadata retrieval is not proof that a client is safe.
+
+Enterprise-Managed Authorization (EMA) allows centrally managed authorization for enterprise MCP clients and servers. It helps administrators provision and govern access, but it does not replace per-tool, per-resource, transaction, or commit-time authorization.
+
+The Python SDK also documents identity-assertion support as an extension for enterprise non-human flows. Treat it as an explicit, issuer-trusted grant with narrow audience and policy—not a reason to merge workload and user identity.
+
+## 15. Common libraries and where they fit
+
+| Component | Lab choice | Production alternatives | Responsibility |
+|---|---|---|---|
+| MCP server/client | official Python `mcp` SDK 2.2 | official TypeScript, Java, C#, Go, Kotlin, Rust SDKs | protocol, transports, schemas, auth integration |
+| token validation | PyJWT + `cryptography` Ed25519 | Authlib, JOSE libraries, managed API gateway | cryptographic/profile validation |
+| strict inputs | Pydantic 2 | JSON Schema validators, Zod/Ajv | shape and type enforcement |
+| output validation | `jsonschema` | Ajv, framework-native validation | structured result contract |
+| attribute policy | OPA/Rego | Cedar, Casbin, cloud policy services | contextual allow/deny and obligations |
+| relationship policy | task/resource store in lab | OpenFGA, SpiceDB, Zanzibar-like service | subject-agent-task-resource relationships |
+| HTTP testing | HTTPX/ASGI test clients | SDK-specific harnesses, contract tests | challenges, metadata, transport behavior |
+| identity/workload | deterministic fixture | OIDC AS, SPIFFE/SPIRE, cloud workload identity | trustworthy principal evidence |
+| durable effects | in-memory ledger in lab | transactional database, outbox, workflow engine | idempotency, receipts, reconciliation |
+
+Choose libraries that validate the protocol/profile you actually use. A generic JWT decoder is not an OAuth access-token policy, and an MCP schema is not resource authorization.
+
+## 16. Practical lab
+
+The scenario is a claims-adjuster agent. It may search one task's claims, read and update an assigned claim, and create an exactly approved payment. The system includes a malicious cross-tenant claim and attack fixtures.
+
+### Part A — Baseline
+
+Run the deliberately weak decode-only evaluator:
 
 ```python
-decode_without_verification(token)
+baseline_metrics, rows = evaluate(build_cases(), hardened=False)
 ```
 
-and never authorize based only on a `scope` string from an unverified JWT.
+It accepts most invalid cases because it treats parseable claims and a tool name as authority. Record which identity and transaction dimensions it ignores.
 
----
+### Part B — SDK resource server
 
-# 6. Resource Indicators
+Inspect `build_sdk_server()`, `NorthstarTokenVerifier`, and `protected_resource_metadata()`. Confirm:
 
-OAuth Resource Indicators (RFC 8707) let a client indicate the target protected resource during authorization/token requests.
+- the official SDK owns the HTTP resource-server integration;
+- resource validation is explicitly enabled;
+- per-tool scope remains a business invocation decision; and
+- no network or external credential is needed for the training fixture.
 
-For MCP:
+### Part C — Discovery, invocation, and strict arguments
 
-```text
-resource = https://claims-mcp.example
-```
-
-The resulting access token should be usable for the intended MCP resource, not every service in the enterprise.
-
-This reduces token misuse across services.
-
----
-
-# 7. Audience confusion
-
-Suppose:
-
-```text
-token aud = calendar-api
-```
-
-An MCP server must not accept it merely because:
-
-```text
-issuer is trusted
-scope looks useful
-```
-
-Require the token to be intended for the MCP resource.
-
-```text
-trusted issuer
-AND correct resource/audience
-AND valid scope
-```
-
----
-
-# 8. Token passthrough is dangerous
-
-Unsafe architecture:
-
-```text
-User token
-   |
-   v
-MCP Client
-   |
-   v
-MCP Server
-   |
-   +------ same token ------> downstream API
-```
-
-This can:
-
-- expose downstream credentials to intermediaries;
-- violate audience boundaries;
-- create confused deputies;
-- hide which service actually exercised authority;
-- broaden credential replay impact.
-
-The MCP security guidance has long emphasized that MCP servers must not simply accept and forward tokens not intended for them.
-
----
-
-# 9. Downstream authorization
-
-Safer:
-
-```text
-Client token
-aud = claims-mcp
-       |
-       v
-Claims MCP
-       |
-       | token exchange / OBO /
-       | server-managed OAuth
-       v
-Downstream token
-aud = claims-api
-```
-
-The downstream credential should be separately scoped and audience-bound.
-
----
-
-# 10. Confused deputy
-
-A classic MCP risk:
-
-```text
-attacker
-  |
-  | causes trusted MCP server
-  | to exercise stronger authority
-  v
-downstream system
-```
-
-Example:
-
-```text
-Agent may call:
-send_email
-
-MCP server itself has:
-mailbox.admin
-```
-
-If the MCP server uses its own broad credential without checking represented-user/task authority, the agent can turn it into a deputy.
-
----
-
-# 11. Confused-deputy invariant
-
-For delegated actions:
-
-```text
-effective authority =
-user authority
-∩ agent authority
-∩ task authority
-∩ tool policy
-∩ target-resource policy
-∩ downstream authority
-```
-
-Never:
-
-```text
-MCP service account can do it
-therefore agent can do it
-```
-
----
-
-# 12. Three authorization layers
-
-## Layer 1 — MCP resource
-
-```text
-May this client access claims-mcp?
-```
-
-## Layer 2 — tool
-
-```text
-May claims-agent call payment.create?
-```
-
-## Layer 3 — target resource
-
-```text
-May Alice + claims-agent create
-a payment for claim:483?
-```
-
-These checks answer different questions.
-
----
-
-# 13. Per-server authorization
-
-If every operation is sensitive:
-
-```text
-/mcp requires OAuth
-```
-
-for all requests.
-
-This is operationally simple.
-
-Use when:
-
-```text
-all tools require identity
-all resources are protected
-anonymous discovery has no value
-```
-
----
-
-# 14. Per-tool authorization
-
-Some MCP applications mix public and protected capabilities.
-
-Example:
-
-```text
-public:
-  weather.search
-  docs.public_search
-
-protected:
-  calendar.read
-  claims.update
-  payment.create
-```
-
-The MCP Apps authorization guidance documents both per-server and per-tool approaches.
-
-Protected operations should trigger OAuth at the HTTP authorization boundary, with defense-in-depth inside the tool handler.
-
----
-
-# 15. Discovery is part of authorization
-
-Even if invocation is protected, exposing tool names can reveal:
-
-```text
-internal capabilities
-admin operations
-customer systems
-high-value workflows
-```
-
-Instead of:
-
-```text
-tools/list -> every tool
-```
-
-prefer context-aware discovery where appropriate:
-
-```text
-tools/list -> tools caller may reasonably use
-```
-
-Do not rely on hiding tools as the *only* enforcement. Invocation must still be authorized.
-
----
-
-# 16. Tool annotations are not authorization
-
-MCP tool annotations can describe behavior/risk hints.
-
-Treat them as:
-
-```text
-metadata
-```
-
-not:
-
-```text
-security enforcement
-```
-
-A model or client must not decide:
-
-```text
-readOnlyHint=true -> automatically safe
-```
-
-Authorization remains server-side.
-
----
-
-# 17. User identity vs agent identity
-
-An MCP request may involve:
-
-```text
-user = Alice
-agent = claims-agent
-client application = desktop-agent-host
-workload = spiffe://corp/prod/claims-agent
-```
-
-These identities should not be silently collapsed.
-
-Policy may require:
-
-```text
-Alice may update claim
-AND
-claims-agent may update claim
-AND
-workload is approved for claims-agent
-```
-
----
-
-# 18. Agent-specific authority
-
-Bad:
-
-```text
-Agent receives everything Alice can do.
-```
-
-Better:
-
-```text
-Alice:
-claims:read
-claims:update
-payments:create
-
-Claims Agent:
-claims:read
-claims:update
-
-Task:
-claims:read
-```
-
-Effective:
-
-```text
-claims:read
-```
-
----
-
-# 19. Tool-to-task binding
-
-Tool call:
-
-```json
-{
-  "tool":"claim.update",
-  "arguments":{"claim_id":"483"}
-}
-```
-
-Policy should verify:
-
-```text
-task = claim:483
-target = claim:483
-```
-
-A prompt must not change:
-
-```text
-claim_id = 999
-```
-
-and inherit the original task authority.
-
----
-
-# 20. Argument authorization
-
-Tool authorization is not only about the tool name.
-
-Example:
-
-```text
-payment.create
-```
-
-Arguments matter:
-
-```text
-amount
-currency
-account
-beneficiary
-claim
-region
-data classification
-```
-
-Policy:
-
-```text
-tool allowed
-AND
-amount <= approved amount
-AND
-beneficiary == approved beneficiary
-AND
-claim == task claim
-```
-
----
-
-# 21. Step-up authorization
-
-Suppose the current token has:
-
-```text
-claims:read
-```
-
-The agent attempts:
-
-```text
-claims:update
-```
-
-The resource may require additional authorization.
-
-The 2026-07-28 MCP generation clarified scope accumulation during step-up. Clients should preserve previously granted scopes when requesting additional ones rather than accidentally replacing required authority.
-
----
-
-# 22. Step-up for agents
-
-Sensitive tool:
-
-```text
-payment.create
-```
-
-may require:
-
-```text
-fresh user authentication
-human approval
-additional OAuth scope
-fresh delegated token
-higher assurance
-```
-
-Flow:
-
-```text
-tools/call
-   |
-   v
-insufficient authority
-   |
-   v
-authorization challenge
-   |
-   v
-step-up
-   |
-   v
-retry with sufficient authority
-```
-
----
+Discover with a read-only token, revoke the task's tool grant, then attempt the cached call. Try an extra argument, integer resource ID, cross-tenant target, unbounded search, and stolen state handle.
 
-# 23. Authorization-server mix-up
+### Part D — Consequential action
 
-MCP clients may connect to many servers backed by different authorization servers.
-
-This increases OAuth mix-up risk.
-
-The 2026-07-28 MCP specification hardens this by requiring clients to validate the authorization response `iss` parameter according to RFC 9207 before redeeming the authorization code.
-
-Conceptually:
-
-```text
-expected AS = https://id.corp
-returned iss = https://evil.example
-
--> reject
-```
-
----
-
-# 24. Credential isolation by issuer
-
-Client credentials registered with:
-
-```text
-https://id-a.example
-```
-
-must not be blindly reused with:
-
-```text
-https://id-b.example
-```
-
-The 2026-07-28 MCP authorization hardening binds stored client credentials to the authorization-server issuer.
-
-This matters greatly for:
-
-```text
-one agent host
-+
-hundreds of MCP servers
-+
-many authorization servers
-```
-
----
-
-# 25. Client ID Metadata Documents
-
-MCP is moving away from Dynamic Client Registration (DCR) toward **Client ID Metadata Documents (CIMD)**.
-
-With CIMD, the client identifier is a URL whose document describes the client.
-
-This reduces dependence on every authorization server dynamically registering every MCP client.
-
-The 2026-07-28 specification formally deprecates DCR in favor of CIMD, while retaining backward compatibility for now.
-
----
-
-# 26. Why CIMD matters for enterprise agent hosts
-
-A desktop/CLI/agent platform may connect to many independently operated MCP servers.
-
-DCR can create:
-
-```text
-registration sprawl
-client-secret storage
-issuer-specific credentials
-lifecycle complexity
-```
-
-CIMD moves toward web-hosted client metadata and a more scalable client identity model.
-
-Enterprise governance still needs:
-
-```text
-approved clients
-trusted metadata origins
-redirect URI controls
-software provenance
-```
-
----
-
-# 27. Enterprise-Managed Authorization
-
-In June 2026, MCP's **Enterprise-Managed Authorization (EMA)** extension became stable.
-
-EMA addresses enterprise environments where repeatedly asking every user to authorize every MCP server is operationally painful.
-
-Conceptually:
-
-```text
-Enterprise IdP / policy
-        |
-        | centrally managed authorization
-        v
-Approved MCP servers
-        |
-        v
-User/agent gets organization-managed access
-```
-
-This supports centrally provisioned MCP connectivity and enterprise control.
-
----
-
-# 28. EMA is not "skip authorization"
-
-Central management does not mean:
-
-```text
-everyone gets every tool
-```
-
-You still need:
-
-```text
-user policy
-agent policy
-tool policy
-resource policy
-task policy
-```
-
-EMA solves an authorization-management/provisioning problem, not fine-grained application authorization by itself.
-
----
-
-# 29. Third-party OAuth
-
-An MCP server may need access to:
-
-```text
-Google Drive
-GitHub
-Salesforce
-Microsoft Graph
-banking API
-```
-
-Do not ask the MCP client/model to collect and forward user passwords/API keys.
-
-Use an appropriate downstream OAuth flow.
-
----
-
-# 30. URL-mode elicitation
-
-MCP introduced URL-mode elicitation to support secure out-of-band interactions such as third-party OAuth.
-
-Conceptually:
-
-```text
-MCP server needs downstream authorization
-        |
-        v
-returns secure authorization URL
-        |
-        v
-user completes flow in browser
-        |
-        v
-downstream credential goes to server-side integration
-```
-
-The MCP client does not need to receive the user's downstream credential.
-
-This avoids token passthrough and credential collection inside prompts/chat.
-
----
-
-# 31. Token storage
-
-If the MCP server stores downstream refresh/access tokens:
-
-```text
-encrypt at rest
-isolate per tenant/user
-least privilege
-rotate keys
-audit access
-support revocation
-never expose to LLM context
-never return in tool output
-```
-
-Credentials are control-plane secrets.
-
----
-
-# 32. Sender-constrained tokens
-
-Where supported, strengthen bearer-token security with:
-
-```text
-DPoP
-mTLS
-```
-
-The RFC 9728 protected-resource metadata model can advertise capabilities such as DPoP support.
-
-Sender-constrained credentials reduce replay if a token leaks.
-
----
-
-# 33. Dynamic authorization
-
-From Intermediate 05:
-
-```text
-authorization can change after initial access
-```
-
-MCP example:
-
-```text
-agent starts task
-tools/list shows:
-  claim.read
-  claim.update
-
-risk increases
-tools/list now shows:
-  claim.read
-
-claim.update invocation:
-  deny / step-up
-```
-
-Discovery and invocation should reflect current policy.
-
----
-
-# 34. Cached tool catalogs
-
-The 2026-07-28 MCP specification adds cache hints to list results such as `tools/list`.
-
-This improves efficiency but creates a security design question:
-
-```text
-What if authorization changes while a tool list is cached?
-```
-
-Rule:
-
-```text
-cached discovery != cached permission to execute
-```
-
-Always authorize invocation independently.
-
-For sensitive environments, tool-catalog cache lifetime should reflect authorization volatility.
-
----
-
-# 35. Header-based routing and enforcement
-
-The 2026-07-28 MCP specification puts method and tool names into:
-
-```text
-Mcp-Method
-Mcp-Name
-```
-
-HTTP headers.
-
-This allows gateways to route, meter and apply coarse authorization controls without deep JSON parsing.
-
-But gateway rules are still not a replacement for target-resource authorization inside the MCP service.
-
----
-
-# 36. Stateless MCP core
-
-The 2026-07-28 MCP core is stateless at the protocol level.
-
-Security implication:
-
-Do not depend on hidden connection-local state for authorization.
-
-Every request should carry or resolve enough trusted context to establish:
-
-```text
-caller
-authority
-task
-resource
-policy
-```
-
-Application workflows may remain stateful, but protocol-level authorization must survive ordinary load balancing.
-
----
-
-# 37. Long-running MCP tasks
-
-Tasks are now an extension in the 2026-07-28 generation.
-
-A task may outlive the authorization assumptions under which it was created.
-
-Therefore:
-
-```text
-task created at t0
-```
-
-does not imply:
-
-```text
-every later task update/action is still authorized
-```
-
-Re-authorize sensitive continuation, update and completion actions.
-
----
-
-# 38. Task cancellation
-
-Security events may require:
-
-```text
-tasks/cancel
-```
-
-or equivalent application cancellation.
-
-Examples:
-
-```text
-delegation revoked
-user disabled
-agent quarantined
-approval withdrawn
-resource placed on hold
-```
-
-Dynamic authorization should connect to task lifecycle.
-
----
-
-# 39. MCP server identity
-
-Clients should know which server they are connecting to.
-
-Do not authorize merely because:
-
-```text
-server name == "Corporate Claims"
-```
-
-Names and self-reported metadata are not cryptographic identity.
-
-Trust should derive from:
-
-```text
-TLS origin
-approved endpoint
-enterprise registry
-authorization metadata
-deployment/workload identity where applicable
-```
-
----
-
-# 40. MCP server supply-chain governance
-
-Enterprise registry can track:
-
-```text
-server ID
-owner
-endpoint
-publisher
-approved version
-allowed authorization server
-data classification
-tools
-risk tier
-deployment identity
-review status
-```
-
-Agent policy can deny unregistered MCP endpoints even if technically reachable.
-
----
-
-# 41. Tool supply-chain governance
-
-Tool definition changes can alter authority.
-
-Example:
-
-```text
-search_claims
-```
-
-changes implementation from:
-
-```text
-read-only search
-```
-
-to:
-
-```text
-search + external export
-```
-
-Authorization based only on a stable tool name may miss semantic changes.
-
-Track:
-
-```text
-server version
-tool schema/version
-risk classification
-approval
-```
+Create a payment approval, mutate one cent, restore the action, then attempt replay. Inspect the proposal digest and versions. Inject revocation between preflight and commit.
 
-for high-impact tools.
+### Part E — Failure injection
 
----
+Inject:
 
-# 42. Defense in depth
+- wrong signature, issuer, audience, profile, expiry, and lifetime;
+- subject, tenant, agent, client, workload, and task substitution;
+- missing scope and stale resource version;
+- routing header/body mismatch;
+- malicious output;
+- arbitrary downstream audience and scope widening; and
+- a lost response after the business effect commits.
 
-Sensitive tool handler:
+### Part F — Evaluation
 
 ```python
-async def payment_create(args, auth):
-    require_authenticated(auth)
-    require_scope(auth, "payments:create")
-    require_agent_permission(auth.actor, "payment.create")
-    require_task_binding(auth.task, args.claim_id)
-    require_resource_permission(auth.subject, args.claim_id)
-    require_approval(args.amount)
-    ...
+metrics, rows = evaluate(build_cases())
+assert release_gate(metrics)
 ```
 
-Even if a gateway performed coarse authorization, the handler still validates its critical invariants.
-
----
-
-# 43. Error semantics
-
-Different failures should remain distinguishable:
+The gate requires:
 
 ```text
-401 -> authentication/authorization acquisition required
-403 -> authenticated but insufficient authority
-step-up challenge -> more authority/assurance required
-tool-level validation error -> bad business arguments
+invalid acceptances = 0
+valid work blocked = 0
+every labeled outcome matches
+duplicate effect count = 0
 ```
 
-Do not convert everything into:
+The matrix has 44 cases: five valid workflows and 39 abuse/failure conditions. Add a case before changing a control so regressions are visible.
 
-```text
-"Tool failed"
+### Part G — Policy engines
+
+The course includes equivalent examples:
+
+- [`policies/opa/mcp.rego`](policies/opa/mcp.rego) with Rego tests; and
+- [`policies/cedar/mcp.cedar`](policies/cedar/mcp.cedar) with a validated Cedar schema.
+
+Run OPA when installed:
+
+```bash
+opa test curriculum/intermediate/06-mcp-tool-authorization/policies/opa -v
 ```
 
-The client needs enough structured information to react safely.
+The Python test suite parses and validates the Cedar policy with `cedarpy`. Notice that neither policy accepts a bare `approval.valid` boolean; the exact digest, identities, versions, expiry, and consumption state are compared.
 
----
+## 17. Production hardening checklist
 
-# 44. Audit evidence
+### Protocol and OAuth
 
-For each sensitive invocation record:
+- [ ] Pin a supported MCP protocol and official SDK version.
+- [ ] Publish canonical RFC 9728 protected-resource metadata.
+- [ ] Include `resource` in authorization and token requests.
+- [ ] Validate exact issuer and audience/resource on every request.
+- [ ] Validate RFC 9207 issuer on authorization responses.
+- [ ] Keep authorization-server client credentials isolated by issuer.
+- [ ] Return HTTP 401/403 challenges with bounded scope retry.
+- [ ] Never accept tokens from query parameters or pass MCP tokens downstream.
 
-```json
-{
-  "decision_id":"dec:83",
-  "mcp_server":"claims-mcp",
-  "subject":"user:alice",
-  "actor":"agent:claims",
-  "client":"enterprise-agent-host",
-  "tool":"payment.create",
-  "target":"claim:483",
-  "task":"task:483",
-  "scope":["payments:create"],
-  "approval_id":"apr:92",
-  "policy_version":"payments-v18",
-  "decision":"allow"
-}
-```
+### MCP and tools
 
-Never log bearer/refresh tokens.
+- [ ] Authorize discovery and invocation independently.
+- [ ] Reject `Mcp-Method`/`Mcp-Name` mismatches with the request body.
+- [ ] Namespace tools by a stable server identity in aggregators.
+- [ ] Reject unknown input fields and validate every output.
+- [ ] Treat annotations as hints unless their source is trusted.
+- [ ] Bind state handles to subject, tenant, task, query, and expiry.
 
----
+### Business authorization
 
-# 45. Practical notebook
+- [ ] Derive identity context from verified and authoritative sources.
+- [ ] Enforce tenant, subject, task, resource, purpose, and version.
+- [ ] Bind approval to an exact canonical proposal and consume it once.
+- [ ] Re-authorize immediately before every consequential effect.
+- [ ] Fail closed when policy/current-state dependencies are unavailable.
+- [ ] Keep OAuth step-up distinct from business risk/assurance step-up.
 
-The notebook builds a local MCP authorization simulator covering:
+### Effects and operations
 
-1. protected-resource metadata;
-2. authorization-server discovery;
-3. audience/resource validation;
-4. scope validation;
-5. MCP resource authorization;
-6. per-tool authorization;
-7. tool discovery filtering;
-8. target-resource authorization;
-9. task binding;
-10. argument constraints;
-11. confused-deputy attacks;
-12. token passthrough rejection;
-13. downstream token exchange;
-14. step-up authorization;
-15. scope accumulation;
-16. issuer mix-up protection;
-17. issuer-bound client credentials;
-18. CIMD modeling;
-19. EMA enterprise policy;
-20. URL-mode downstream OAuth modeling;
-21. dynamic tool exposure;
-22. cached-discovery safety;
-23. agent quarantine;
-24. audit evidence;
-25. adversarial regression tests.
+- [ ] Bind operation IDs to request digests.
+- [ ] Reconcile unknown outcomes before retrying.
+- [ ] Make effect and receipt atomic or use a durable saga/outbox.
+- [ ] Persist privacy-aware decision evidence with policy/tool/resource versions.
+- [ ] Alert on repeated token, handle, approval, routing, and output failures.
 
----
+### Client and local-server security
 
-# 46. Production checklist
+- [ ] Defend discovery/redirect fetches from SSRF, rebinding, and unsafe redirects.
+- [ ] Bind OAuth state to the authenticated session and chosen issuer.
+- [ ] Validate CIMD origins/redirects under an explicit trust policy.
+- [ ] Sandbox local MCP servers and minimize their environment and egress.
+- [ ] Re-consent when local executable, arguments, schemas, or provenance change.
 
-## MCP resource
+## 18. Knowledge check
 
-- Is Protected Resource Metadata published?
-- Are authorization servers explicit?
-- Is the token intended for this resource?
-- Is issuer validated?
-- Is expiry validated?
-- Are scopes enforced?
-- Are 401/403 semantics correct?
+1. Why can a tool omitted from `tools/list` still require an invocation-time denial?
+2. Which failures should trigger an OAuth scope challenge, and which should not?
+3. Why is `approval.valid = true` weaker than an approval bound to a proposal digest?
+4. What must an exact retry prove before the server returns an earlier result?
+5. Why must a downstream API receive a different, narrower token?
+6. What does strict JSON Schema validation still fail to prove?
+7. How do the HTTP and stdio authorization boundaries differ?
+8. Which versions belong in decision evidence, and why?
 
-## Client
+## 19. References and currency
 
-- Is authorization-server `iss` validated?
-- Are client credentials isolated by issuer?
-- Is CIMD supported/planned?
-- Are redirects tightly controlled?
-- Are tokens stored securely?
+Primary sources, checked for this course revision:
 
-## Agent
+- [MCP Authorization specification, 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
+- [MCP Security Best Practices, 2026-07-28](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices)
+- [MCP Tools specification, 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
+- [MCP 2026-07-28 release overview](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
+- [Official MCP Python SDK authorization guide](https://github.com/modelcontextprotocol/python-sdk/blob/main/docs/run/authorization.md)
+- [Official MCP Python SDK OAuth client guide](https://github.com/modelcontextprotocol/python-sdk/blob/main/docs/client/oauth-clients.md)
+- [Official MCP Python SDK 2.2.0 release](https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.2.0)
+- [Enterprise-Managed Authorization](https://blog.modelcontextprotocol.io/posts/enterprise-managed-auth/)
+- [RFC 9728 — OAuth 2.0 Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728)
+- [RFC 8707 — Resource Indicators for OAuth 2.0](https://www.rfc-editor.org/rfc/rfc8707)
+- [RFC 6750 — OAuth 2.0 Bearer Token Usage](https://www.rfc-editor.org/rfc/rfc6750)
+- [RFC 9207 — OAuth 2.0 Authorization Server Issuer Identification](https://www.rfc-editor.org/rfc/rfc9207)
+- [RFC 8693 — OAuth 2.0 Token Exchange](https://www.rfc-editor.org/rfc/rfc8693)
+- [RFC 9449 — OAuth 2.0 Demonstrating Proof of Possession](https://www.rfc-editor.org/rfc/rfc9449)
+- [Open Policy Agent documentation](https://www.openpolicyagent.org/docs/latest/)
+- [Cedar Policy Language documentation](https://docs.cedarpolicy.com/)
+- [OpenFGA documentation](https://openfga.dev/docs)
 
-- Is agent identity distinct from user?
-- Is agent authority bounded?
-- Is workload identity verified where needed?
-- Is authority task-bound?
-- Can agent authority be revoked independently?
+Re-check the MCP version, SDK release notes, OAuth drafts, and extension status before production adoption. Pin both protocol and SDK compatibility in tests.
 
-## Tools
+## 20. Handoff to Intermediate 07
 
-- Is discovery filtered appropriately?
-- Is invocation independently authorized?
-- Are tool arguments constrained?
-- Is tool schema/version governed?
-- Do sensitive tools require step-up?
-
-## Resources
-
-- Is target-resource authorization separate?
-- Is tenant isolation enforced?
-- Is resource version checked for high-impact actions?
-
-## Downstream APIs
-
-- Is token passthrough prohibited?
-- Is downstream audience separate?
-- Is OBO/token exchange/server-side OAuth used appropriately?
-- Are downstream secrets excluded from model context?
-
-## Dynamic controls
-
-- Can tool access change during execution?
-- Are cached catalogs treated only as discovery?
-- Can active tasks be stopped after revocation?
-- Are policy changes enforced quickly?
-
-## Evidence
-
-- user;
-- agent;
-- client;
-- MCP server;
-- tool;
-- target;
-- task;
-- approval;
-- policy version;
-- decision;
-- timestamp.
-
----
-
-# 47. Key takeaways
-
-1. MCP authorization is more than adding OAuth to `/mcp`.
-2. The MCP server is a protected OAuth resource and must validate token intent.
-3. Resource Indicators and audience restriction reduce cross-service token misuse.
-4. Never treat a trusted issuer as sufficient authorization.
-5. Token passthrough creates dangerous trust-boundary violations.
-6. MCP-resource, tool and target-resource authorization are distinct layers.
-7. Tool arguments are part of the authorization decision.
-8. Preserve user, agent, client and workload identities separately.
-9. Step-up should acquire only the additional authority needed.
-10. The 2026-07-28 spec hardens issuer validation and issuer-bound client credentials.
-11. MCP is moving from DCR toward Client ID Metadata Documents.
-12. Enterprise-Managed Authorization is now stable for centrally managed enterprise MCP access.
-13. URL-mode elicitation enables server-managed third-party OAuth without exposing credentials to the MCP client.
-14. Cached tool discovery never replaces invocation authorization.
-15. Stateless MCP makes explicit request-time authorization context even more important.
-16. Long-running MCP tasks must be re-authorized as conditions change.
-17. MCP and tool supply chains belong in the enterprise authorization model.
-18. Every sensitive tool invocation should leave reconstructable authorization evidence.
-
----
-
-# References
-
-- MCP 2026-07-28 specification announcement  
-  https://blog.modelcontextprotocol.io/posts/2026-07-28/
-- MCP Authorization  
-  https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
-- MCP Security Best Practices  
-  https://modelcontextprotocol.io/specification/2026-07-28/basic/security_best_practices
-- MCP Enterprise-Managed Authorization  
-  https://blog.modelcontextprotocol.io/posts/enterprise-managed-auth/
-- MCP Apps Authorization  
-  https://apps.extensions.modelcontextprotocol.io/api/documents/authorization.html
-- MCP TypeScript SDK — 2026-07-28 migration  
-  https://ts.sdk.modelcontextprotocol.io/v2/migration/support-2026-07-28
-- MCP Python SDK — OAuth Protected Resource Metadata  
-  https://py.sdk.modelcontextprotocol.io/v2/api/mcp/shared/auth/
-- RFC 9728 — OAuth 2.0 Protected Resource Metadata  
-  https://www.rfc-editor.org/rfc/rfc9728
-- RFC 8707 — Resource Indicators for OAuth 2.0  
-  https://www.rfc-editor.org/rfc/rfc8707
-- RFC 9207 — OAuth Authorization Server Issuer Identification  
-  https://www.rfc-editor.org/rfc/rfc9207
-- RFC 8693 — OAuth 2.0 Token Exchange  
-  https://www.rfc-editor.org/rfc/rfc8693
-- RFC 9449 — DPoP  
-  https://www.rfc-editor.org/rfc/rfc9449
-- RFC 8705 — OAuth Mutual TLS  
-  https://www.rfc-editor.org/rfc/rfc8705
-
----
-
-# Next course
-
-## Intermediate 07 — Risk, Assurance & Step-Up Authorization for Agents
-
-Next we make authorization sensitive to operation risk:
-
-```text
-assurance levels
-transaction risk
-agent risk
-human approval
-fresh authentication
-workload attestation
-step-up
-progressive autonomy
-policy thresholds
-```
+This module establishes **what exact transaction is being authorized** and how the PEP enforces it. Intermediate 07 adds the richer question: **what human, workload, and contextual assurance is proportional to this action's current risk, and what step-up can satisfy it?** Keep the boundaries separate: stronger authentication cannot fix a forbidden resource, and a broader OAuth scope cannot satisfy a missing transaction approval.
