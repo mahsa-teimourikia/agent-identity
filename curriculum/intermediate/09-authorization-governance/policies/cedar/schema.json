@@ -1,0 +1,47 @@
+{
+  "": {
+    "entityTypes": {
+      "Agent": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "tenantId": {"type": "String", "required": true},
+            "ownerId": {"type": "String", "required": true},
+            "status": {"type": "String", "required": true},
+            "activeEntitlements": {"type": "Set", "element": {"type": "String"}, "required": true}
+          },
+          "additionalAttributes": false
+        }
+      },
+      "Claim": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "tenantId": {"type": "String", "required": true}
+          },
+          "additionalAttributes": false
+        }
+      }
+    },
+    "commonTypes": {
+      "GovernanceContext": {
+        "type": "Record",
+        "attributes": {
+          "inventoryCurrent": {"type": "Boolean", "required": true},
+          "exceptionValid": {"type": "Boolean", "required": true},
+          "exceptionApprovalCount": {"type": "Long", "required": true},
+          "toxicCombination": {"type": "Boolean", "required": true},
+          "policyVersion": {"type": "String", "required": true},
+          "modelVersion": {"type": "String", "required": true}
+        },
+        "additionalAttributes": false
+      }
+    },
+    "actions": {
+      "ReadClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "GovernanceContext"}}},
+      "ExportClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "GovernanceContext"}}}
+    }
+  }
+}
