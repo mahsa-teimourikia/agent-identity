@@ -1,8 +1,8 @@
 # Intermediate 08 — Workload Assurance & Runtime Attestation for Agents
 
-![Workload Assurance & Runtime Attestation](images/workload-assurance-runtime-attestation.png)
-
 > **Goal:** bind logical agent identity to a cryptographically identifiable, attested workload and make runtime/supply-chain evidence part of authorization.
+
+**Level:** intermediate · **Time:** 4–5 hours · **Format:** reading + executed notebook + reusable lab + policy exercises
 
 An agent can have a perfectly designed logical identity and still be unsafe if its runtime has been replaced, moved to an untrusted environment, or launched from an unapproved artifact.
 
@@ -23,6 +23,12 @@ authorization decision
 ```
 
 This course uses **SPIFFE/SPIRE** as the primary workload-identity model and connects it to **SLSA 1.2**, Sigstore/Cosign, Kubernetes identity, policy engines, and agent authorization.
+
+```bash
+uv sync
+uv run python curriculum/intermediate/08-workload-assurance-runtime-attestation/lab.py
+uv run pytest curriculum/intermediate/08-workload-assurance-runtime-attestation/tests -q
+```
 
 ---
 
@@ -1286,7 +1292,11 @@ Policy should not treat all evidence as equally fresh.
 
 ---
 
-# 56. Practical notebook
+# 56. Practical notebook and reusable lab
+
+Open [`workload_attestation.ipynb`](workload_attestation.ipynb). It imports
+[`lab.py`](lab.py), so the guided exercises, adversarial matrix, and automated
+tests use one implementation rather than copying security logic.
 
 The notebook covers:
 
@@ -1295,14 +1305,14 @@ The notebook covers:
 3. workload registration;
 4. node/workload attestation concepts;
 5. selector matching;
-6. simulated X.509-SVID issuance;
+6. Ed25519-signed X.509 identity issuance and URI SAN validation;
 7. mTLS identity verification concepts;
 8. JWT-SVID issuance and audience validation;
 9. replay-risk demonstration;
 10. Workload API-style rotation;
 11. logical-agent/workload binding;
 12. artifact digest verification;
-13. SLSA provenance checks;
+13. signed in-toto/SLSA provenance checks;
 14. Sigstore/Cosign policy modeling;
 15. runtime posture;
 16. drift detection;
@@ -1310,8 +1320,30 @@ The notebook covers:
 18. federation;
 19. workload-aware authorization;
 20. quarantine;
-21. adversarial tests;
-22. real SPIRE deployment exercises.
+21. release-gated adversarial tests and 45 executable invariants;
+22. optional real SPIRE deployment exercises.
+
+The local lab models the trust boundaries while remaining offline and
+deterministic. It is not a SPIFFE conformance implementation and does not
+pretend that a Boolean such as `attested=true` is evidence. The optional
+extension in [`spire/README.md`](spire/README.md) uses maintained upstream
+SPIRE quickstarts instead of an incomplete floating-tag deployment.
+
+## RATS evidence, appraisal, and attestation results
+
+IETF RFC 9334 separates the **Attester** that produces Evidence, the
+**Verifier** that appraises it using endorsements and reference values, and the
+**Relying Party** that consumes signed Attestation Results under its own
+policy. Raw device measurements should not flow directly into business policy
+as trusted posture.
+
+RFC 9711 defines the Entity Attestation Token framework for
+integrity-protected CBOR/CWT or JSON/JWT claims sets. EAT is a framework, not a
+universal device profile: deployments must select a profile, algorithms,
+required claims, freshness mechanism, reference values, verifier identity,
+and privacy rules. The lab models this boundary with nonce-bound signed
+verifier results and rejects evidence replay, unknown measurements, stale
+results, and identity swapping.
 
 ---
 
@@ -1399,30 +1431,24 @@ The notebook covers:
 
 # References
 
-- SPIFFE Standard  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe/
-- SPIFFE Identity and SVID  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/
-- SPIFFE Workload API  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/
-- X.509-SVID  
-  https://spiffe.io/docs/latest/spiffe-specs/x509-svid/
-- SPIFFE Trust Domain and Bundle  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe_trust_domain_and_bundle/
-- SPIFFE Federation  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/
-- Working with SVIDs  
-  https://spiffe.io/docs/latest/deploying/svids/
-- SPIRE concepts and deployment  
-  https://spiffe.io/docs/latest/
-- SLSA v1.2  
-  https://slsa.dev/spec/v1.2/
-- SLSA v1.2 Provenance  
-  https://slsa.dev/spec/v1.2/provenance
-- SLSA v1.2 Verifying Artifacts  
-  https://slsa.dev/spec/v1.2/verifying-artifacts
-- Sigstore Cosign Verification  
-  https://docs.sigstore.dev/cosign/verifying/verify/
+- [SPIFFE standards](https://spiffe.io/docs/latest/spiffe-specs/)
+- [SPIFFE Identity and SVID](https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/)
+- [SPIFFE Workload API](https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/)
+- [X.509-SVID](https://spiffe.io/docs/latest/spiffe-specs/x509-svid/)
+- [SPIFFE Trust Domain and Bundle](https://spiffe.io/docs/latest/spiffe-specs/spiffe_trust_domain_and_bundle/)
+- [SPIFFE Federation](https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/)
+- [SPIRE configuration and attestation](https://spiffe.io/docs/latest/deploying/configuring/)
+- [Official SPIRE Docker quickstart](https://spiffe.io/docs/latest/try/spire101/)
+- [RFC 9334 — RATS architecture](https://www.rfc-editor.org/rfc/rfc9334)
+- [RFC 9711 — Entity Attestation Token](https://www.rfc-editor.org/rfc/rfc9711)
+- [RFC 9782 — EAT media types](https://www.rfc-editor.org/rfc/rfc9782)
+- [RFC 10013 — EAT Measured Component](https://www.rfc-editor.org/rfc/rfc10013)
+- [SLSA v1.2](https://slsa.dev/spec/v1.2/)
+- [SLSA v1.2 Build Provenance](https://slsa.dev/spec/v1.2/build-provenance)
+- [SLSA artifact verification](https://slsa.dev/spec/v1.2/verifying-artifacts)
+- [Sigstore Cosign verification](https://docs.sigstore.dev/cosign/verifying/verify/)
+- [Sigstore in-toto attestations](https://docs.sigstore.dev/cosign/verifying/attestation/)
+- [Open Policy Agent documentation](https://www.openpolicyagent.org/docs/latest/)
 
 ---
 
