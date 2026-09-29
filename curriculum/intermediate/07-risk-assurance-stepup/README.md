@@ -1,1258 +1,533 @@
-# Intermediate 07 — Risk, Assurance & Step-Up Authorization for Agents
+# Intermediate 07 — Risk, Assurance, and Step-Up Authorization for Agents
 
-![Risk, Assurance & Step-Up Authorization](images/risk-assurance-stepup.png)
+> **Goal:** make agent authority proportional to the risk of an exact transaction and the current, independently verified strength of human, workload, task, resource, and approval evidence—without allowing step-up to repair an ineligible action.
 
-> **Goal:** make agent authority proportional to the risk of the action and the current strength of the human, workload, task, and approval evidence.
+**Level:** intermediate · **Time:** 3–4 hours · **Format:** reading + executed notebook + reusable lab + policy exercises
 
-Agent authorization should not be:
+Agent authorization is not `authenticated → allowed`. A production enforcement point first establishes whether an action is eligible at all, then determines which assurance and approvals are proportional to its current risk, emits the correct remediation challenge, and rechecks everything at the effect boundary.
 
-```text
-authenticated -> everything allowed
-```
-
-A stronger model is:
-
-```text
-request
-  -> evaluate action/resource risk
-  -> inspect current assurance
-  -> authorize, constrain, step-up, require approval, or deny
-  -> re-evaluate as conditions change
-```
-
-This module connects **digital identity assurance**, **workload assurance**, **transaction risk**, **progressive autonomy**, and **OAuth step-up**.
-
----
+This course uses NIST SP 800-63 Revision 4 for human digital identity concepts, RFC 9470 for interoperable OAuth user-authentication step-up, OAuth Rich Authorization Requests for structured transaction authority, and SPIFFE-shaped workload evidence. It does **not** invent a NIST “agent AAL.”
 
 ## Learning outcomes
 
-You will learn to:
+By the end, you can:
 
-- distinguish identity proofing, authentication assurance, federation assurance, workload assurance, and authorization risk;
-- use NIST SP 800-63 Revision 4 correctly without pretending its human assurance levels are agent risk levels;
-- understand AAL1/AAL2/AAL3;
-- model agent/workload assurance separately from human AAL;
-- use SPIFFE/SPIRE workload attestation as machine-identity evidence;
-- understand RFC 9470 OAuth Step Up Authentication Challenge Protocol;
-- use `acr_values`, `max_age`, `auth_time`, and `acr` correctly;
-- design risk-adaptive authorization;
-- implement progressive autonomy;
-- bind approval to action, resource and parameters;
-- distinguish step-up authentication from step-up authorization;
-- prevent “MFA means safe” reasoning;
-- design high-value transaction controls;
-- combine identity, workload, device, task and behavioral signals;
-- produce reasoned authorization evidence;
-- test bypass and downgrade attacks.
+- distinguish identity proofing, authentication, federation, workload, task, approval, and transaction assurance;
+- describe NIST IAL, AAL, and FAL without turning them into a generic trust score;
+- map only explicitly trusted `acr` values to local assurance properties;
+- evaluate `auth_time` independently of token issuance and expiry;
+- emit and consume a correct RFC 9470 `WWW-Authenticate` challenge;
+- separate user step-up, missing OAuth scope, workload re-attestation, and business approval;
+- prove that stronger authentication cannot fix a wrong tenant, resource, task, or prohibited action;
+- combine deterministic policy ceilings with explainable risk scoring;
+- govern signal source, freshness, model version, and evidence version;
+- implement progressive autonomy and task-scoped budgets that can shrink dynamically;
+- bind informed approval to the exact proposal, identities, risk, policy, signals, resource version, and expiry;
+- preserve separation of duties and multi-approver requirements;
+- re-evaluate immediately before a side effect and reconcile unknown outcomes exactly once; and
+- test valid work, challenges, constraints, denials, downgrade attacks, races, and replay.
+
+## Prerequisites
+
+Complete Intermediate 02–06 or be comfortable with OIDC/OAuth claims, workload identity, fine-grained policy, continuous authorization, and exact transaction authorization.
+
+```bash
+uv sync
+uv run python curriculum/intermediate/07-risk-assurance-stepup/lab.py
+uv run pytest curriculum/intermediate/07-risk-assurance-stepup/tests -q
+```
+
+Open [`risk_stepup_authorization.ipynb`](risk_stepup_authorization.ipynb) for the guided lab. The notebook imports [`lab.py`](lab.py), so its results and the automated tests use one implementation.
 
 ---
 
-# 1. Why agents need risk-sensitive authorization
+## 1. Start with eligibility, not risk score
 
-An agent may perform:
+The safe order is:
 
 ```text
-search FAQ
-read claim
-update claim note
-send email
-approve refund
-change beneficiary
-create payment
-delete account
+authenticate token and derive trusted session
+  -> validate strict action arguments
+  -> enforce absolute eligibility
+       tenant + subject + agent + client + task + resource + action ceiling
+  -> assess current transaction risk from authoritative signals
+  -> derive assurance and approval requirements
+  -> choose one precise remediation or allow/constraint/deny
+  -> re-evaluate at commit
+  -> execute and record exactly once
 ```
 
-These actions do not have equal impact.
+A step-up prompt must never be offered for:
 
-A policy such as:
+- another tenant's object;
+- an inactive or unrelated task;
+- a caller/agent/workload binding mismatch;
+- an action outside the delegation;
+- a prohibited self-administration action;
+- compromised device/account state; or
+- a hard policy ceiling.
+
+Those are denials. Asking a user to authenticate more strongly suggests an unsafe and impossible path to authorization.
+
+## 2. Risk and assurance are different dimensions
+
+**Risk** asks: what harm could this exact action cause under current conditions?
+
+**Assurance** asks: how much confidence do we have in each piece of evidence supporting the decision?
 
 ```text
-if authenticated:
-    allow
+transaction risk
+  = action impact + resource sensitivity + amount + beneficiary
+  + delegation + behavioral/environmental signals
+
+decision evidence
+  = verified human session + verified workload + active task
+  + authoritative resource + fresh risk signals + exact approval
 ```
 
-ignores:
+Do not add every input into one score and let good signals cancel hard failures. The lab uses an explainable score for gradated requirements and separate `hard_denials` for non-compensating constraints.
 
-```text
-action sensitivity
-data sensitivity
-monetary impact
-irreversibility
-delegation depth
-current identity assurance
-workload trust
-behavioral anomalies
-task context
-```
+## 3. NIST SP 800-63 Revision 4
 
----
+NIST finalized the Revision 4 suite in July 2025:
 
-# 2. Risk and assurance are different
+| Publication | Primary concern |
+|---|---|
+| SP 800-63-4 | overall digital identity risk management |
+| SP 800-63A-4 | identity proofing and enrollment; IAL |
+| SP 800-63B-4 | authentication and authenticator management; AAL |
+| SP 800-63C-4 | federation and assertions; FAL |
 
-**Risk** asks:
+### IAL, AAL, and FAL
 
-```text
-How dangerous is it to perform this action now?
-```
+- **IAL** expresses confidence in identity proofing—the process that establishes which person is represented.
+- **AAL** expresses confidence that the claimant controls authenticator(s) bound to a subscriber account.
+- **FAL** expresses requirements for conveying authentication/identity information through federation assertions.
 
-**Assurance** asks:
+They are related but not interchangeable. A strongly authenticated account can still lack authority over a claim or payment.
 
-```text
-How strongly do we trust the evidence supporting the identities/context?
-```
+### AAL facts that matter here
 
-Conceptually:
+NIST defines AAL1, AAL2, and AAL3—there is no NIST AAL4.
 
-```text
-authorization =
-function(
-  action risk,
-  resource risk,
-  human assurance,
-  workload assurance,
-  task assurance,
-  approval assurance,
-  environmental risk
+- AAL2 requires proof of two distinct authentication factors. Verifiers must offer a phishing-resistant option; federal staff, contractors, and partners must use phishing-resistant authentication for federal systems.
+- AAL3 uses a public-key cryptographic protocol, requires phishing resistance, a non-exportable key, two factors, and authentication intent.
+
+The lab represents these as separate properties:
+
+```python
+AcrProfile(
+    aal=3,
+    phishing_resistant=True,
+    non_exportable_key=True,
 )
 ```
 
----
+That makes a policy such as “AAL2 plus phishing resistance” precise. Numeric comparison alone cannot express it.
 
-# 3. NIST SP 800-63 Revision 4
+## 4. ACR is a trust-framework identifier, not a number
 
-NIST finalized **SP 800-63 Revision 4** in July 2025.
+OIDC `acr` is an Authentication Context Class Reference. Its string is meaningful only under an agreement with the authorization server. Never parse `urn:caller:aal999` and conclude it is stronger than AAL3.
 
-The suite includes:
-
-```text
-SP 800-63-4   Digital Identity Guidelines
-SP 800-63A-4  Identity Proofing & Enrollment
-SP 800-63B-4  Authentication & Authenticator Management
-SP 800-63C-4  Federation & Assertions
-```
-
-Revision 4 updates the risk-management framing and includes continuous-evaluation considerations.
-
-Important:
-
-> NIST assurance levels primarily describe digital identity processes for people interacting with systems. Do not rename AALs into “agent assurance levels” and imply NIST standardized that mapping.
-
-For agents, use separate workload/agent evidence and combine it with human assurance where the agent acts on behalf of a person.
-
----
-
-# 4. IAL, AAL and FAL
-
-## Identity Assurance Level — IAL
-
-Confidence in the identity proofing process.
+The lab has an issuer-bound registry:
 
 ```text
-Who is this person?
-How strongly was that identity established?
+urn:northstar:auth:aal1
+urn:northstar:auth:aal2
+urn:northstar:auth:aal2:phishing-resistant
+urn:northstar:auth:aal3
 ```
 
-## Authentication Assurance Level — AAL
+The verifier maps those values to local properties after validating token signature, issuer, audience, profile, key ID, lifetime, subject, client, agent, tenant, task, and scopes. Unknown ACR values fail closed.
 
-Confidence in the authentication event/authenticators.
+Production governance for an ACR mapping should record:
+
+- owning authorization server and trust framework;
+- authenticator combinations and factor independence;
+- phishing/replay resistance and authentication intent;
+- key exportability/hardware requirements;
+- effective dates and change process; and
+- conformance evidence and exceptions.
+
+## 5. Authentication time is not token time
+
+`auth_time` records when the user actively authenticated. `iat` records when a token was issued. Refreshing a token does not necessarily make the authentication event fresh.
 
 ```text
-How strongly did the subscriber authenticate?
+auth_age = policy_clock - verified auth_time
 ```
 
-## Federation Assurance Level — FAL
+OIDC says that when `max_age` is requested, the authorization server must actively reauthenticate if necessary and the resulting ID Token must include `auth_time`. RFC 9470 extends that pattern to access-token information, either in a JWT access token or introspection response.
 
-Requirements around federation/assertions.
+The lab uses a fixed policy clock, not wall-clock calls embedded in business logic. Tests can therefore cover boundary conditions without flakiness.
+
+## 6. RFC 9470 step-up authentication
+
+RFC 9470 lets a resource server say that the user authentication associated with a valid access token is too weak or too old.
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer error="insufficient_user_authentication",
+  error_description="Stronger or more recent user authentication is required",
+  acr_values="urn:northstar:auth:aal2:phishing-resistant urn:northstar:auth:aal3",
+  max_age="300"
+```
+
+The client parses the challenge and starts a new authorization request containing `acr_values` and/or `max_age`. The authorization server returns a new access token only after satisfying its policy. The resource server validates the new token and repeats the authorization decision.
+
+Important protocol details:
+
+- `acr_values` is a space-separated preference list.
+- `max_age` is a non-negative number of seconds since active authentication.
+- both may appear in one challenge;
+- access tokens are opaque to clients, even when they happen to be JWTs;
+- the resource validates `acr`/`auth_time` from a verified JWT or trusted introspection response; and
+- unsupported requirements must fail cleanly instead of causing an infinite prompt loop.
+
+### Challenge privacy and abuse
+
+RFC 9470 warns that challenges can disclose information about a resource or high-privilege user. Validate the token before returning detailed requirements when practical, minimize descriptions, rate-limit challenges, cap retry loops, and do not let an untrusted resource force arbitrary user prompts.
+
+## 7. Four different remediation paths
+
+| Condition | Result | Protocol/control |
+|---|---|---|
+| user auth too weak/stale | `user_step_up` | HTTP 401, RFC 9470 challenge |
+| OAuth permission absent | `scope_required` | HTTP 403 insufficient scope / authorization flow |
+| trusted workload evidence stale | `workload_step_up` | workload re-attestation/reissue workflow |
+| exact approval absent/expired | `approval_required` | business approval workflow |
+
+Do not collapse these into a generic “step up” boolean. Each has a different actor, evidence issuer, UX, retry condition, and audit trail.
+
+Some problems are not remediable:
 
 ```text
-How is identity/authentication information securely conveyed?
+wrong tenant/resource -> deny
+unapproved image/workload -> deny
+compromised device/account -> deny
+prompt-injection signal on a side effect -> deny or pause
+absolute agent ceiling -> deny
 ```
 
-These dimensions solve different problems.
+## 8. Human and workload assurance remain separate
 
----
+The human session answers how Alice authenticated. Workload evidence answers what deployment is running the claims agent.
 
-# 5. Authentication Assurance Levels
-
-NIST SP 800-63B-4 defines three authenticator assurance levels:
-
-```text
-AAL1
-AAL2
-AAL3
-```
-
-Do not invent:
-
-```text
-AAL4
-```
-
-as a NIST level.
-
-For course-specific risk tiers, use names such as:
-
-```text
-R1 / R2 / R3 / R4
-```
-
-instead.
-
----
-
-# 6. Agent/workload assurance
-
-For an autonomous workload, relevant evidence can include:
-
-```text
-workload identity
-deployment identity
-node attestation
-workload attestation
-signed image provenance
-approved version
-runtime posture
-environment
-namespace/service account
-agent registration status
-```
-
-This is not human AAL.
-
-Represent it separately:
-
-```text
-human_aal = AAL2
-workload_assurance = verified
-agent_status = approved
-```
-
----
-
-# 7. SPIFFE and SPIRE
-
-SPIFFE provides a workload identity framework built around:
+The lab's workload evidence includes:
 
 ```text
 SPIFFE ID
-SVID
-Workload API
+approved image digest
+production environment
+attested state
+observation and expiry times
+trusted verifier identity
+evidence version
 ```
 
-SPIRE is a production-ready SPIFFE implementation that performs **node and workload attestation** before issuing workload identities.
+Known workload identity with expired/stale evidence can request re-attestation. A different SPIFFE ID, development environment, or unapproved image is a binding failure and is denied. Intermediate 08 deepens the attestation protocol; this course focuses on how verified workload properties influence a transaction decision.
 
-Example:
+## 9. Explainable risk with non-compensating rules
 
-```text
-spiffe://corp.example/prod/agents/claims
-```
-
-The identity says which workload is calling.
-
-Attestation strengthens confidence that the expected workload is actually running in the expected environment.
-
----
-
-# 8. Workload attestation
-
-SPIRE workload attestation can use selectors such as:
+The lab's deterministic model starts with action impact and adds explicit signals:
 
 ```text
-Unix UID/GID
-executable path
-Kubernetes namespace
-Kubernetes service account
-Docker properties
-```
-
-Conceptually:
-
-```text
-process
-   |
-   v
-SPIRE Agent
-   |
-   | inspect workload/platform properties
-   v
-selectors
-   |
-   | match registration entry
-   v
-SPIFFE ID / SVID
-```
-
----
-
-# 9. Authentication strength is not authorization
-
-Even perfect authentication does not imply:
-
-```text
-may transfer $100,000
-```
-
-Authentication establishes confidence about the subject.
-
-Authorization decides whether the requested action is permitted.
-
-Never:
-
-```text
-AAL3 -> automatically allow high-risk action
-```
-
-Instead:
-
-```text
-high-risk action
-AND sufficient authentication
-AND sufficient workload assurance
-AND valid task
-AND approval
-AND resource policy
-AND acceptable risk
-```
-
----
-
-# 10. Risk tiers
-
-A useful enterprise taxonomy:
-
-| Tier | Example | Default response |
-|---|---|---|
-| R1 | public search | autonomous |
-| R2 | internal read | authenticated + authorized |
-| R3 | record update | stronger context / fresh authorization |
-| R4 | payment/delete/regulated release | step-up + approval or prohibit |
-
-These are organizational risk tiers, not NIST assurance levels.
-
----
-
-# 11. Risk signals
-
-## Human identity/session
-
-```text
-AAL
-authentication age
-account risk
-session age
-device posture
-location/network
-```
-
-## Agent/workload
-
-```text
-SPIFFE identity
-attestation status
-approved image/version
-runtime environment
-agent registration
-quarantine status
-```
-
-## Task
-
-```text
-purpose
-delegation depth
-expiry
-approved resources
-approved actions
-```
-
-## Resource/action
-
-```text
-data classification
-monetary value
-irreversibility
-external side effect
-regulatory impact
-```
-
-## Behavior
-
-```text
-unusual tool sequence
-velocity
-new resource pattern
+resource classification
+amount band
+new beneficiary
+account state
+device state
+behavior score and provenance
 prompt-injection score
-repeated denials
 ```
 
----
+It also enforces hard rules:
 
-# 12. Risk scoring
+- task and enterprise payment ceilings;
+- suspended account or compromised device;
+- untrusted/stale behavior signal for a write;
+- prompt-injection signal blocking a side effect;
+- prohibited self-administration; and
+- overall risk ceiling.
 
-A simple model:
+The resulting evidence carries reason codes, model version, signal version, and score. A model update is a policy change: test it against labeled cases, assess calibration and disparate impact, stage it, and retain the version needed to reconstruct decisions.
+
+### Risk signals need provenance and freshness
+
+For each signal define:
+
+| Property | Question |
+|---|---|
+| source | which authenticated service produced it? |
+| subject/resource | what entity does it describe? |
+| observed time | when was the state measured? |
+| expiry/SLA | how old may it be for this action? |
+| version | which schema/rules produced it? |
+| failure mode | deny, constrain, pause, or last-known-good lease? |
+
+Caller-provided `risk=low`, `device_compliant=true`, or `workload_attested=true` is not authoritative evidence.
+
+## 10. Requirements are organizational policy
+
+The reference policy illustrates—not standardizes—this mapping:
+
+| Action/context | User assurance | Workload freshness | Approval |
+|---|---|---|---|
+| FAQ search | optional | identified/current | none |
+| claim read | AAL1+; up to 8-hour auth age | 30 minutes | none |
+| claim update | fresh AAL2 | 10 minutes | risk-dependent |
+| ordinary payment | fresh phishing-resistant AAL2 | 5 minutes | one independent approver |
+| higher-value payment | fresh AAL3 properties | 5 minutes | two distinct independent approvers |
+| disable authorization audit | prohibited for agents | irrelevant | cannot override ceiling |
+
+NIST does not prescribe these transaction mappings. Your risk assessment, legal obligations, fraud model, and operating environment do.
+
+## 11. Exact informed approval
+
+An approval button is useful only if the approver sees and authorizes the exact action. The lab binds:
 
 ```text
-risk =
-base_action_risk
-+ resource_sensitivity
-+ transaction_value
-+ anomaly_score
-+ stale_auth_penalty
-+ untrusted_device_penalty
-+ workload_penalty
-+ delegation_penalty
+action + target + amount + currency + beneficiary + operation ID
+subject + tenant + agent + client + task
+risk score + risk model version + signal version
+policy version + resource version + expiry
+approver identities + consumed state
 ```
 
-Production systems may use:
+For higher-value payments it requires two distinct approvers. Neither the requester nor the agent may approve its own action. A one-cent change, new beneficiary, new risk/signal version, resource update, expired receipt, or replay fails the binding.
+
+Present approvers with:
+
+- who requested and which agent/workload will act;
+- target resource and tenant;
+- exact consequential fields and before/after state;
+- risk reasons and source freshness;
+- data classification and irreversibility;
+- policy obligations and expiry; and
+- a clear reject/escalate path.
+
+## 12. Rich and protected authorization requests
+
+OAuth scope strings are often too coarse for payments and other structured transactions. RFC 9396 Rich Authorization Requests define `authorization_details`, which can carry action, locations, amount, currency, creditor, and other API-specific fields.
+
+RAR can complement the exact approval record, but it does not remove resource-server policy. Protect high-value front-channel authorization details from tampering and swapping with signed request objects or Pushed Authorization Requests (PAR). The final FAPI 2.0 Security Profile uses PAR, authorization code flow, PKCE, and sender-constrained access tokens for high-security APIs.
+
+Do not put sensitive transaction details into URLs where referrer/history leakage is possible. Prefer back-channel PAR and minimize what appears in logs.
+
+## 13. Progressive autonomy and budgets
+
+Autonomy is not a global boolean. Model bounded levels such as:
 
 ```text
-rules
-statistical models
-graph signals
-threat intelligence
-vendor risk engines
+L0 observe
+L1 recommend
+L2 autonomous read/low-risk action
+L3 bounded write with current assurance
+L4 exact approved high-impact action
 ```
 
-Do not hide high-impact authorization entirely inside an opaque ML score.
+A task budget can limit cumulative amount, message count, data classification, delegation depth, and time. Risk changes can move authority down immediately. Budget reservations and side effects must be atomic; otherwise concurrent calls can each observe the same remaining budget and overspend.
 
-Use interpretable policy boundaries.
+Never let a model choose its own level or edit its budget. The trusted PEP applies the budget to validated arguments and authoritative counters.
 
----
+## 14. Commit-time re-evaluation and exactly-once effects
 
-# 13. Policy-based response
-
-Example:
+Step-up and approval can become stale before execution. The lab performs:
 
 ```text
-risk < 30:
-    allow
-
-30 <= risk < 60:
-    constrain
-
-60 <= risk < 80:
-    step_up
-
-risk >= 80:
-    deny_or_pause
+preflight decision
+  -> optional work / user interaction
+  -> atomic idempotency lookup
+  -> current risk + assurance + approval decision
+  -> effect
+  -> receipt + approval consumption
 ```
 
-The exact thresholds are organization-specific.
+The test suite changes device state between preflight and commit and proves the write is stopped. It also sends eight concurrent identical retries and proves one effect plus seven reconciliations.
 
----
+A timeout after commit is an unknown outcome. Retry the same operation ID and canonical request digest, retrieve the prior receipt, and reject changed content under the same ID.
 
-# 14. Progressive autonomy
+## 15. Evidence and privacy
 
-Instead of:
+Decision evidence should contain:
 
 ```text
-agent autonomous = true/false
+subject / agent / client / workload / task identifiers
+action and proposal digest
+outcome and reason codes
+risk tier, score, model, and signal versions
+ACR and authentication age (not authenticators)
+workload evidence version and freshness
+approval identifier/approvers (not secrets)
+policy and resource versions
+operation/effect receipt
 ```
 
-use levels:
+Never log access tokens, authenticator outputs, biometric samples, private keys, or sensitive approval payloads. The lab fingerprints token IDs instead of storing raw credentials.
 
-```text
-observe
-recommend
-act on low-risk operations
-act with approval
-act autonomously within bounded limits
+## 16. Common libraries and services
+
+| Layer | Lab | Production options | Responsibility |
+|---|---|---|---|
+| OIDC/OAuth | PyJWT + Ed25519 fixture | Authlib, oauthlib, certified IdP SDK/gateway | validate token, `acr`, `auth_time`, scope |
+| user authenticator | trusted ACR registry | WebAuthn/passkeys, PIV/CAC, platform authenticators | phishing resistance, factors, intent |
+| workload identity | SPIFFE-shaped evidence | SPIRE, cloud workload identity, attestation service | workload and deployment evidence |
+| strict actions | Pydantic | JSON Schema, Zod/Ajv | argument contract |
+| risk engine | deterministic rules | OPA, Cedar, fraud/risk services, feature platform | explainable policy and signals |
+| relationship policy | task store | OpenFGA, SpiceDB | subject-agent-task-resource relations |
+| authorization requests | Python structures | RFC 9396 RAR, PAR, FAPI 2.0 stack | exact structured authority |
+| approval | in-memory receipt | workflow/approval service with signed evidence | informed consent, SoD, expiry |
+| durable execution | locked ledger | database transaction, outbox, workflow engine | budgets, idempotency, reconciliation |
+
+An identity provider's “MFA” flag is not enough. Verify what the provider's ACR actually means, whether phishing resistance and intent were achieved, and when the authentication occurred.
+
+## 17. Practical lab
+
+Northstar's claims agent can search FAQs, read/update one assigned claim, and propose a payment. The fixtures include a trusted ACR registry, signed sessions, workload evidence, dynamic signals, task/resource state, risk model, approval store, RFC 9470 transaction store, and idempotent effect adapter.
+
+### Part A — Baseline
+
+```python
+baseline, rows = evaluate(build_cases(), hardened=False)
 ```
 
-Authority can change per task and per action.
+The deliberately weak baseline treats any request as allowed. Identify why authentication alone cannot decide resource, risk, assurance, approval, and effect safety.
 
----
+### Part B — Trusted session and ACR mapping
 
-# 15. Autonomy budget
+Verify an ordinary AAL2 token, an AAL3 token, an unknown ACR, a wrong audience, and future `auth_time`. Inspect the derived `UserSession`; no caller-supplied numeric AAL is used.
 
-An agent can have an autonomy budget:
+### Part C — Risk and requirements
 
-```json
-{
-  "max_payment": 500,
-  "max_external_messages": 3,
-  "allowed_data_classification": "internal",
-  "max_delegation_depth": 1,
-  "expires_in_minutes": 30
-}
+Compare ordinary and new-beneficiary payments, internal and restricted resources, fresh and stale behavior signals, and low/high prompt-injection scores. Separate additive reasons from hard denials.
+
+### Part D — RFC 9470
+
+Start with an AAL1/stale payment session. Inspect the 401 header, authorization URL, bound state handle, `acr_values`, and `max_age`. Complete with:
+
+- a valid fresh matching session;
+- a different subject/client/task;
+- a weaker ACR;
+- a stale `auth_time`; and
+- replay of an already consumed transaction.
+
+### Part E — Approval and execution
+
+Record one- and two-person approvals, mutate amount/beneficiary/versions, attempt self-approval, inject a commit-time signal change, lose the post-commit response, and run concurrent retries.
+
+### Part F — Failure injection and evaluation
+
+```python
+metrics, rows = evaluate(build_cases())
+assert release_gate(metrics)
 ```
 
-Risk can reduce that budget dynamically.
+The 55 cases cover valid work, constraints, user/workload/scope/approval remediation, identity and resource substitution, ACR downgrade, stale evidence, compromised signals, risk ceilings, approval tampering, and schema attacks. The release gate requires every label to match, zero invalid allows, and zero valid work blocked.
 
----
+### Part G — Policy engines
 
-# 16. Step-up authentication
+- [`policies/opa/risk_stepup.rego`](policies/opa/risk_stepup.rego) returns a structured multi-outcome decision and has 11 Rego tests.
+- [`policies/cedar/risk_stepup.cedar`](policies/cedar/risk_stepup.cedar) models final grants after requirements are met and is type-checked against its Cedar schema.
 
-RFC 9470 defines the **OAuth 2.0 Step Up Authentication Challenge Protocol**.
-
-It addresses situations where a resource server determines that the authentication associated with the current access token is not strong enough or recent enough.
-
-The resource can challenge the client with additional authentication requirements.
-
----
-
-# 17. RFC 9470 concepts
-
-The resource server can signal:
-
-```text
-insufficient_user_authentication
+```bash
+opa test curriculum/intermediate/07-risk-assurance-stepup/policies/opa -v
 ```
 
-and indicate requirements such as:
-
-```text
-acr_values
-max_age
-```
-
-The client can then initiate authorization requesting the required authentication properties.
-
----
-
-# 18. Authentication Context Class Reference
-
-`acr` communicates an authentication context/class.
-
-Example conceptually:
-
-```json
-{
-  "acr":"urn:example:high-assurance"
-}
-```
-
-Do not assume that an arbitrary `acr` string means NIST AAL2/AAL3.
-
-The meaning depends on the authorization server/trust framework.
-
----
-
-# 19. `auth_time`
-
-`auth_time` records when the user authentication occurred.
-
-A sensitive operation might require:
-
-```text
-authentication age <= 5 minutes
-```
-
-A token may be unexpired but the authentication event may be too old for the operation.
-
----
-
-# 20. `max_age`
-
-During step-up, the client can request fresh authentication using `max_age`.
-
-Conceptually:
-
-```text
-max_age=300
-```
-
-means the authorization server must ensure the user's authentication is recent enough for the requested flow.
-
----
-
-# 21. Step-up flow
-
-```text
-Agent client
-    |
-    | token
-    v
-Resource
-    |
-    | current authentication insufficient
-    v
-OAuth step-up challenge
-    |
-    v
-Authorization Server
-    |
-    | stronger/fresher authentication
-    v
-new token/assertion
-    |
-    v
-Resource re-evaluates authorization
-```
-
-Step-up does not itself guarantee the action is authorized.
-
----
-
-# 22. Step-up authentication vs authorization
-
-These are distinct:
-
-```text
-Step-up authentication:
-prove user identity more strongly/freshly
-
-Step-up authorization:
-obtain additional permission/approval
-```
-
-A high-risk action may need both:
-
-```text
-fresh strong user authentication
-+
-manager approval
-+
-additional OAuth scope
-```
-
----
-
-# 23. Step-up workload assurance
-
-Agents may need machine-side step-up too.
-
-Examples:
-
-```text
-fresh workload attestation
-new SVID
-verified deployment digest
-trusted execution evidence
-restarted clean workload
-approved runtime
-```
-
-Do not call these NIST AAL.
-
-They are workload-assurance controls.
-
----
-
-# 24. Multi-dimensional assurance
-
-A useful decision record:
-
-```json
-{
-  "human": {
-    "aal":"AAL2",
-    "auth_age_seconds":120
-  },
-  "workload": {
-    "spiffe_id":"spiffe://corp/prod/claims-agent",
-    "attested":true,
-    "image_approved":true
-  },
-  "task": {
-    "approved":true,
-    "expires_in":900
-  },
-  "approval": {
-    "present":false
-  }
-}
-```
-
-Policy reasons over dimensions rather than collapsing everything into one “trust score.”
-
----
-
-# 25. Transaction risk
-
-A payment tool should consider:
-
-```text
-amount
-currency
-beneficiary
-new beneficiary?
-destination country
-velocity
-user history
-claim/invoice amount
-approval
-```
-
-Example:
-
-```text
-$20 refund -> autonomous
-$500 refund -> approval
-$50,000 transfer -> agent prohibited
-```
-
----
-
-# 26. Parameter-bound authorization
-
-Approval:
-
-```text
-approve payment.create
-```
-
-is too broad.
-
-Better:
-
-```json
-{
-  "tool":"payment.create",
-  "claim":"claim:483",
-  "amount":300,
-  "beneficiary":"vendor:17",
-  "expires_at":"..."
-}
-```
-
-If parameters change, step-up/approval must be reconsidered.
-
----
-
-# 27. New beneficiary
-
-Risk can change without the tool changing.
-
-```text
-payment.create
-amount = $300
-existing beneficiary -> R2/R3
-
-payment.create
-amount = $300
-new beneficiary -> R4
-```
-
-Authorization needs transaction context.
-
----
-
-# 28. Authentication age
-
-Example policy:
-
-```text
-read claim:
-  auth age <= 8 hours
-
-update bank details:
-  auth age <= 10 minutes
-
-large payment:
-  auth age <= 5 minutes
-```
-
-Again, these are organizational policies.
-
----
-
-# 29. Device posture
-
-For a human-delegated agent session:
-
-```text
-managed compliant device -> lower risk
-unknown device -> higher risk
-compromised device -> deny
-```
-
-Device posture is one input, not proof of business authorization.
-
----
-
-# 30. Network/location
-
-Signals might include:
-
-```text
-known corporate network
-new ASN
-unexpected country
-TOR/VPN
-impossible travel
-```
-
-Use carefully. Location signals can be noisy and should not automatically override stronger evidence without policy justification.
-
----
-
-# 31. Agent behavioral risk
-
-Agent-specific anomalies:
-
-```text
-sudden increase in tool calls
-accessing unrelated resources
-repeated forbidden tool attempts
-unexpected delegation
-attempting credential retrieval
-retrieving excessive sensitive context
-prompt-injection indicators
-```
-
-Policy can reduce autonomy immediately.
-
----
-
-# 32. Prompt-injection response
-
-If injection risk rises:
-
-```text
-do not merely tell the model to ignore it
-```
-
-Enforcement can:
-
-```text
-remove write tools
-restrict retrieval
-disable external messaging
-require human approval
-terminate task
-```
-
-This turns detection into authorization.
-
----
-
-# 33. Delegation risk
-
-Authority becomes harder to reason about with depth:
-
-```text
-Alice
-  -> Agent A
-      -> Agent B
-          -> Agent C
-```
-
-Risk controls may impose:
-
-```text
-max delegation depth
-no redelegation for high-risk actions
-fresh approval at boundary
-attenuated scopes
-```
-
----
-
-# 34. Human approval
-
-Human-in-the-loop is meaningful only if the human sees enough context.
-
-Approval UI should show:
-
-```text
-agent
-action
-target
-parameters
-reason
-risk
-source task
-data affected
-irreversibility
-```
-
-A button saying:
-
-```text
-Approve?
-```
-
-without context is weak control.
-
----
-
-# 35. Approval fatigue
-
-Do not require approval for every trivial action.
-
-That creates:
-
-```text
-rubber stamping
-slow workflows
-poor security signal
-```
-
-Use risk-based approval and progressive autonomy.
-
----
-
-# 36. Separation of duties
-
-High-risk actions may require:
-
-```text
-requester != approver
-```
-
-or:
-
-```text
-agent cannot both create and approve payment
-```
-
-Agent workflows must preserve enterprise SoD rules rather than automating around them.
-
----
-
-# 37. Deny ceiling
-
-Some actions should remain prohibited for agents regardless of assurance.
-
-Example:
-
-```text
-change enterprise root keys
-approve own exception
-disable audit logging
-modify own identity policy
-```
-
-More authentication does not make every action acceptable.
-
----
-
-# 38. Assurance downgrade
-
-If workload assurance changes:
-
-```text
-approved -> unknown
-```
-
-or human session assurance drops:
-
-```text
-fresh -> stale
-```
-
-the agent should not retain high-risk authority indefinitely.
-
-Combine this module with Continuous Access Evaluation from Intermediate 05.
-
----
-
-# 39. Freshness
-
-Different evidence has different freshness:
-
-```text
-human authentication
-device posture
-workload attestation
-risk score
-approval
-task lease
-resource state
-```
-
-Authorization should define acceptable age per evidence type.
-
----
-
-# 40. Policy matrix
-
-Example:
-
-| Action | Risk | Human | Workload | Approval |
-|---|---:|---|---|---|
-| FAQ search | R1 | optional | identified | no |
-| claim read | R2 | AAL1/2 policy-dependent | verified | no |
-| claim update | R3 | fresh AAL2 | attested | maybe |
-| payment | R4 | strong/fresh auth policy | attested+approved runtime | yes |
-| root policy change | prohibited | — | — | agent denied |
-
-This is an example architecture, not a NIST-prescribed mapping.
-
----
-
-# 41. Reason codes
-
-A decision should explain:
-
-```text
-STEP_UP
-reason:
-  action_risk=R4
-  auth_age=47m
-  required_auth_age<=5m
-  approval_missing=true
-```
-
-Explainability matters for:
-
-```text
-user experience
-operations
-audit
-policy debugging
-incident response
-```
-
----
-
-# 42. Risk engine architecture
-
-```text
-Identity Signals -----\
-Workload Signals ------\
-Task Signals -----------\
-Resource Signals --------> Risk + Policy Engine
-Behavior Signals -------/          |
-Threat Signals --------/           v
-                           allow / constrain
-                           step-up / approve
-                           deny / revoke
-```
-
-Keep deterministic policy around high-impact boundaries.
-
----
-
-# 43. OAuth step-up + agent approval
-
-A robust flow can be:
-
-```text
-agent requests payment
-       |
-       v
-risk engine -> R4
-       |
-       +--> require fresh user auth
-       |
-       +--> require approval
-       |
-       +--> require payment scope
-       |
-       v
-issue bounded authorization
-       |
-       v
-execute exact approved transaction
-```
-
----
-
-# 44. Step-up token
-
-A post-step-up credential should not become a permanent super-token.
-
-Prefer:
-
-```text
-short TTL
-narrow audience
-narrow scope
-task binding
-transaction binding where possible
-```
-
----
-
-# 45. Replay resistance
-
-For high-value actions consider sender-constrained credentials:
-
-```text
-DPoP
-mTLS
-```
-
-and one-time/transaction-bound approval artifacts.
-
-If a high-assurance token is stolen, broad replay can undermine the entire step-up process.
-
----
-
-# 46. Audit evidence
-
-Record:
-
-```json
-{
-  "decision_id":"dec:1007",
-  "user":"alice",
-  "agent":"claims-agent",
-  "action":"payment.create",
-  "resource":"claim:483",
-  "risk_tier":"R4",
-  "risk_score":72,
-  "human_aal":"AAL2",
-  "auth_age_seconds":95,
-  "workload_attested":true,
-  "approval":"apr:92",
-  "response":"allow_after_step_up",
-  "policy_version":"risk-v7"
-}
-```
-
-Never log authenticators or bearer tokens.
-
----
-
-# 47. Practical notebook
-
-The notebook implements:
-
-1. risk signals;
-2. risk scoring;
-3. R1-R4 classification;
-4. human assurance;
-5. workload assurance;
-6. authentication age;
-7. action sensitivity;
-8. transaction value;
-9. new-beneficiary risk;
-10. delegation risk;
-11. anomaly risk;
-12. progressive autonomy;
-13. RFC 9470-style challenges;
-14. `acr_values`;
-15. `max_age`;
-16. fresh authentication;
-17. step-up authorization;
-18. human approval;
-19. workload re-attestation;
-20. parameter-bound approvals;
-21. dynamic authority reduction;
-22. deny ceilings;
-23. decision reasons;
-24. audit evidence;
-25. bypass tests.
-
----
-
-# 48. Production checklist
-
-## Human assurance
-
-- What AAL is actually established?
-- How old is authentication?
-- What `acr` semantics are trusted?
-- Does the operation require fresh authentication?
-- Is the authenticator phishing-resistant where required?
-
-## Workload
-
-- Is workload identity verified?
-- Was workload attested?
-- Is the deployment approved?
-- Is runtime posture current?
-- Is the agent quarantined?
-
-## Risk
-
-- Is the action classified?
-- Is the resource classified?
-- Is monetary impact included?
-- Are anomaly signals included?
-- Is delegation depth included?
-
-## Step-up
-
-- Is RFC 9470 supported where appropriate?
-- Are `acr_values` understood by the IdP?
-- Is `max_age` enforced?
-- Is additional authorization scoped narrowly?
-- Does step-up expire quickly?
-
-## Approval
-
-- Is approval bound to exact parameters?
-- Does the approver see sufficient context?
-- Is separation of duties preserved?
-- Does approval expire?
-- Can approval be revoked?
-
-## Autonomy
-
-- What can the agent do without approval?
-- What changes at higher risk?
-- Are there absolute deny ceilings?
-- Can authority be reduced dynamically?
-
-## Evidence
-
-- risk inputs;
-- assurance inputs;
-- reason codes;
-- policy version;
-- approval;
-- step-up event;
-- final decision.
-
----
-
-# 49. Key takeaways
-
-1. Risk and assurance are different dimensions.
-2. NIST SP 800-63 Rev. 4 defines human digital identity assurance concepts; do not invent NIST agent AALs.
-3. NIST authentication assurance has AAL1, AAL2 and AAL3—not AAL4.
-4. Workload assurance should be modeled separately from human AAL.
-5. SPIFFE/SPIRE provides useful workload identity and attestation evidence.
-6. Strong authentication does not imply authorization.
-7. RFC 9470 standardizes an OAuth step-up authentication challenge.
-8. `auth_time` and `max_age` make authentication freshness enforceable.
-9. Step-up authentication and step-up authorization are distinct.
-10. High-risk actions may need fresh authentication, approval and narrow additional authority.
-11. Tool arguments and transaction properties change risk.
-12. Progressive autonomy is safer than a global autonomous/non-autonomous flag.
-13. Human approval must be contextual and parameter-bound.
-14. Some actions should remain prohibited regardless of assurance.
-15. Risk signals should drive deterministic enforcement, not only dashboards.
-16. High-assurance credentials should be short-lived and narrowly scoped.
-17. Assurance freshness must be continuously reconsidered.
-
----
-
-# References
-
-- NIST SP 800-63-4 — Digital Identity Guidelines  
-  https://csrc.nist.gov/pubs/sp/800/63/4/final
-- NIST SP 800-63A-4 — Identity Proofing and Enrollment  
-  https://csrc.nist.gov/pubs/sp/800/63/A/4/final
-- NIST SP 800-63B-4 — Authentication and Authenticator Management  
-  https://csrc.nist.gov/pubs/sp/800/63/B/4/final
-- NIST SP 800-63C-4 — Federation and Assertions  
-  https://csrc.nist.gov/pubs/sp/800/63/C/4/final
-- RFC 9470 — OAuth 2.0 Step Up Authentication Challenge Protocol  
-  https://www.rfc-editor.org/rfc/rfc9470
-- RFC 9449 — OAuth DPoP  
-  https://www.rfc-editor.org/rfc/rfc9449
-- RFC 8705 — OAuth Mutual TLS  
-  https://www.rfc-editor.org/rfc/rfc8705
-- SPIFFE Specifications  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe/
-- SPIRE Concepts  
-  https://spiffe.io/docs/latest/spire-about/spire-concepts/
-- SPIRE Workload Attestation  
-  https://spiffe.io/docs/latest/deploying/configuring/
-
----
-
-# Next course
-
-## Intermediate 08 — Workload Assurance & Runtime Attestation for Agents
-
-Next we move deeper into machine identity:
-
-```text
-SPIFFE/SPIRE
-node attestation
-workload attestation
-SVIDs
-Kubernetes workload identity
-runtime provenance
-image identity
-attestation freshness
-agent-to-workload binding
-credential rotation
-runtime policy
-```
+Use Rego when flexible multi-outcome policy and obligations are central. Use Cedar for typed permit/forbid decisions. In either case, the PEP—not the policy language—must authenticate inputs, fulfill obligations, manage step-up state, and guard the effect.
+
+## 18. Production checklist
+
+### Eligibility
+
+- [ ] Validate token signature/profile/issuer/audience/key/time before policy.
+- [ ] Bind subject, agent, client, workload, tenant, task, action, and resource.
+- [ ] Enforce non-remediable ceilings before offering step-up.
+- [ ] Validate exact arguments and authoritative resource versions.
+
+### Human assurance
+
+- [ ] Maintain an issuer-specific ACR semantics registry.
+- [ ] Check AAL properties, phishing resistance, key exportability, and intent separately.
+- [ ] Compute age from verified `auth_time`, not `iat` or client time.
+- [ ] Define acceptable authentication age per action.
+- [ ] Revalidate the stepped-up token like any other access token.
+
+### RFC 9470 client/resource
+
+- [ ] Return HTTP 401 with `insufficient_user_authentication`.
+- [ ] Encode space-separated `acr_values` and numeric `max_age` correctly.
+- [ ] Bind OAuth state to user, client, task, and exact pending transaction.
+- [ ] Cap retries and detect unmet requirements to prevent loops.
+- [ ] Minimize challenge detail and rate-limit prompt abuse.
+- [ ] Keep tokens opaque at the client.
+
+### Workload and signals
+
+- [ ] Verify workload identity, image/environment binding, issuer, freshness, and revocation.
+- [ ] Authenticate every risk-signal producer and bind its subject/resource.
+- [ ] Define stale/missing-source behavior per action class.
+- [ ] Keep hard denials outside compensating risk arithmetic.
+- [ ] Version and regression-test risk models and signal schemas.
+
+### Approval and authority
+
+- [ ] Show approvers exact identities, action, target, parameters, risk, and expiry.
+- [ ] Bind approval to proposal/risk/policy/signal/resource versions.
+- [ ] Enforce separation of duties and approver count.
+- [ ] Consume approvals exactly once.
+- [ ] Use RAR/PAR or equivalent structured, integrity-protected authority for high-value APIs.
+- [ ] Make post-step-up tokens short-lived, audience-limited, sender-constrained where appropriate, and no broader than necessary.
+
+### Execution and operations
+
+- [ ] Re-evaluate at commit and atomically reserve budgets/operations.
+- [ ] Reconcile unknown outcomes before retrying.
+- [ ] Record privacy-aware reasoned evidence.
+- [ ] Alert on prompt loops, ACR downgrade, approval replay, signal outages, and ceiling attempts.
+- [ ] Exercise failover, concurrency, time boundaries, clock skew, and incident revocation.
+
+## 19. Knowledge check
+
+1. Why must eligibility be evaluated before step-up requirements?
+2. What do IAL, AAL, and FAL each describe?
+3. Why can two AAL2 sessions have different phishing-resistance properties?
+4. Why is an unknown `acr` string not comparable with a trusted one?
+5. What is the difference between `auth_time` and token `iat`?
+6. What belongs in an RFC 9470 challenge?
+7. How do missing scope, stale workload evidence, and missing approval differ from user step-up?
+8. Which risk conditions must never be offset by positive signals?
+9. Why must an approval bind risk and resource versions as well as amount?
+10. How does PAR help protect a Rich Authorization Request?
+11. What must be atomic when multiple agent actions consume an autonomy budget?
+12. Why can AAL3 still produce a deny?
+
+## 20. References and currency
+
+Primary and authoritative sources checked for this revision:
+
+- [NIST SP 800-63-4 — Digital Identity Guidelines](https://pages.nist.gov/800-63-4/sp800-63.html)
+- [NIST SP 800-63A-4 — Identity Proofing and Enrollment](https://pages.nist.gov/800-63-4/sp800-63a.html)
+- [NIST SP 800-63B-4 — Authentication and Authenticator Management](https://pages.nist.gov/800-63-4/sp800-63b.html)
+- [NIST SP 800-63C-4 — Federation and Assertions](https://pages.nist.gov/800-63-4/sp800-63c.html)
+- [RFC 9470 — OAuth 2.0 Step Up Authentication Challenge Protocol](https://www.rfc-editor.org/rfc/rfc9470)
+- [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
+- [RFC 9068 — JWT Profile for OAuth 2.0 Access Tokens](https://www.rfc-editor.org/rfc/rfc9068)
+- [RFC 7662 — OAuth 2.0 Token Introspection](https://www.rfc-editor.org/rfc/rfc7662)
+- [RFC 9396 — OAuth 2.0 Rich Authorization Requests](https://www.rfc-editor.org/rfc/rfc9396)
+- [RFC 9126 — OAuth 2.0 Pushed Authorization Requests](https://www.rfc-editor.org/rfc/rfc9126)
+- [RFC 9101 — JWT-Secured Authorization Request](https://www.rfc-editor.org/rfc/rfc9101)
+- [RFC 9700 — Best Current Practice for OAuth 2.0 Security](https://www.rfc-editor.org/rfc/rfc9700)
+- [RFC 9449 — OAuth 2.0 DPoP](https://www.rfc-editor.org/rfc/rfc9449)
+- [RFC 8705 — OAuth 2.0 Mutual TLS](https://www.rfc-editor.org/rfc/rfc8705)
+- [FAPI 2.0 Security Profile, final](https://openid.net/specs/fapi-security-profile-2_0-final.html)
+- [W3C Web Authentication Level 3](https://www.w3.org/TR/webauthn-3/)
+- [SPIFFE specifications](https://spiffe.io/docs/latest/spiffe-specs/spiffe/)
+- [SPIRE concepts](https://spiffe.io/docs/latest/spire-about/spire-concepts/)
+- [Open Policy Agent documentation](https://www.openpolicyagent.org/docs/latest/)
+- [Cedar Policy Language documentation](https://docs.cedarpolicy.com/)
+
+Re-check NIST errata, authorization-server ACR semantics, OAuth/FAPI conformance, authenticator restrictions, and SDK behavior before production use.
+
+## 21. Handoff to Intermediate 08
+
+This course consumes verified workload identity, image, environment, issuer, and freshness as authorization evidence. Intermediate 08 goes deeper into how those facts are produced: node and workload attestation, SVID issuance/rotation, Kubernetes selectors, provenance, runtime posture, and agent-to-workload binding. Keep the separation intact: human step-up cannot repair an untrusted workload, and fresh workload attestation cannot grant an ineligible human/task transaction.
