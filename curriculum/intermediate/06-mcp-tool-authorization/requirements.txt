@@ -1,4 +1,10 @@
-PyJWT>=2.8
-cryptography>=42
-requests>=2.31
-rich>=13.7
+mcp>=2.2,<3
+PyJWT[crypto]>=2.9,<3
+cryptography>=43,<47
+pydantic>=2.8,<3
+jsonschema>=4.23
+httpx>=0.27
+opa-python-client>=1.3
+cedarpy>=4.0
+pytest>=8.3
+rich>=13.8
