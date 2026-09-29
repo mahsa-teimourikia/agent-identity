@@ -1,5 +1,4 @@
-// Illustrative runtime policies whose lifecycle is governed by this course.
-
+// Runtime enforcement complements—not replaces—the governance control plane.
 permit (
   principal is Agent,
   action == Action::"ReadClaim",
@@ -7,15 +6,36 @@ permit (
 )
 when {
   principal.status == "active" &&
-  principal.owner != "" &&
-  resource.tenant == principal.tenant
+  principal.ownerId != "" &&
+  principal.tenantId == resource.tenantId &&
+  context.inventoryCurrent &&
+  context.policyVersion == "policy:v20" &&
+  context.modelVersion == "authz-model:01K9GOVERNANCE" &&
+  principal.activeEntitlements.contains("claim.read|claim:483")
 };
 
-forbid (
+permit (
   principal is Agent,
-  action in [Action::"CreatePayment", Action::"ApprovePayment"],
-  resource
+  action == Action::"ExportClaim",
+  resource is Claim
 )
 when {
-  principal.hasToxicFinanceCombination
+  principal.status == "active" &&
+  principal.ownerId != "" &&
+  principal.tenantId == resource.tenantId &&
+  context.inventoryCurrent &&
+  context.exceptionValid &&
+  context.exceptionApprovalCount >= 2 &&
+  context.policyVersion == "policy:v20" &&
+  context.modelVersion == "authz-model:01K9GOVERNANCE" &&
+  principal.activeEntitlements.contains("claim.export|claim:483")
+};
+
+forbid (principal, action, resource)
+when {
+  principal.status != "active" ||
+  principal.ownerId == "" ||
+  principal.tenantId != resource.tenantId ||
+  !context.inventoryCurrent ||
+  context.toxicCombination
 };

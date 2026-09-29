@@ -3,3 +3,6 @@ networkx>=3.3
 rich>=13.7
 matplotlib>=3.8
 pydantic>=2.7
+cedarpy>=4.8
+jsonschema>=4.23
+pytest>=8.3

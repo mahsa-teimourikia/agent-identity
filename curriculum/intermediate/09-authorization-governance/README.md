@@ -1,8 +1,22 @@
 # Intermediate 09 — Authorization Governance, Delegation & Least Privilege at Scale
 
-![Authorization Governance](images/authorization-governance.png)
-
 > **Goal:** govern authorization as a continuously managed enterprise system—not a collection of static roles and policies.
+
+| Course shape | Details |
+|---|---|
+| Level | Intermediate |
+| Time | 90–120 minute guided lab; 60–90 minute extension |
+| Format | Concept guide, executed notebook, reusable Python lab, OPA and Cedar policy-as-code, 59 automated checks |
+| Prerequisites | Python, request-time authorization, RBAC/ABAC/ReBAC basics, and policy-as-code familiarity |
+| Local setup | Python 3.10+; no credentials, cloud account, or network calls required by the lab |
+
+Start with the executed [governance notebook](governance_delegation.ipynb), then inspect the reusable [control-plane lab](lab.py), [tests](tests/test_authorization_governance.py), [OPA policy](policies/opa/governance.rego), and [Cedar policy](policies/cedar/governance.cedar).
+
+## Success criteria and boundaries
+
+A successful implementation inventories every modeled authority source, rejects invalid delegation, keeps analytics advisory, binds reviews and exceptions to immutable evidence, measures candidate-policy regressions, and revokes all modeled surfaces during offboarding. The executable release gate requires all 18 expected decisions to match with zero invalid allows and zero valid-work blocks.
+
+This course does not build an IAM product or claim that one engine solves governance. OpenFGA, Cedar, and OPA illustrate complementary relationship, runtime-policy, and fleet-governance roles. Production deployments must add durable storage, authenticated administration, distributed concurrency control, privacy and retention controls, signed policy delivery, and provider-specific revocation adapters.
 
 At scale, an enterprise must answer:
 
@@ -526,6 +540,13 @@ agent:claims-agent#acts_for@user:alice
 
 OpenFGA's current documentation explicitly uses agent/tool delegation as a ReBAC example.
 
+### Production lifecycle rules
+
+- Authorization models are immutable after creation. Persist and pin the returned `authorization_model_id` on reads, writes, and checks instead of silently using the latest model.
+- Use conditions for bounded attributes such as time windows, but keep condition names and parameter types stable across model evolution.
+- Contextual tuples exist only for the current request and are not written to the store. They are useful for trusted ephemeral facts, not as a hidden persistence mechanism.
+- Model rollout needs impact tests, tuple migration analysis, a staged consumer rollout, and a known-good model ID for rollback.
+
 ---
 
 # 20. OpenFGA and agents
@@ -663,6 +684,8 @@ delegation too deep
 ```
 
 Runtime policy and governance policy can share concepts while remaining separate policy packages.
+
+For production OPA fleets, the management plane matters as much as Rego: discovery supplies configuration, signed bundles distribute policy and data, status telemetry proves activation, and decision logs support review and incident analysis. Apply log masking and retention controls before exporting inputs because authorization context can contain personal or sensitive data. The course policy accepts `input.now` so evaluation and replay are deterministic; it does not call a wall clock from inside policy.
 
 ---
 
@@ -1317,36 +1340,28 @@ A mature architecture:
 
 # 56. Practical notebook
 
-The notebook implements:
+The executed notebook and reusable lab implement one Northstar Insurance case from inventory through offboarding:
 
-1. governance inventory;
-2. entitlement catalog;
-3. delegation graph;
-4. effective permission calculation;
-5. delegation depth;
-6. cycles;
-7. authority attenuation;
-8. orphan detection;
-9. stale access;
-10. wildcard detection;
-11. usage analysis;
-12. over-permission recommendations;
-13. toxic combinations;
-14. transitive toxic paths;
-15. SoD;
-16. temporary exceptions;
-17. recertification;
-18. risk-based review;
-19. policy versions;
-20. policy impact analysis;
-21. governance metrics;
-22. decision evidence;
-23. offboarding;
-24. shadow-agent discovery;
-25. adversarial tests;
-26. OpenFGA model exercise;
-27. Cedar policy exercise;
-28. OPA governance policy exercise.
+1. validate a versioned JSON inventory and calculate direct/effective authority;
+2. enforce delegation attenuation, redelegation, depth, expiry, tenant binding and cycle detection;
+3. find orphaned/stale agents, risky wildcards, unused high-risk grants and toxic combinations;
+4. keep usage recommendations separate from access mutation;
+5. issue exact, two-approver, policy-bound, short-lived exceptions;
+6. recertify against snapshot digests with separation of duties, optimistic concurrency and idempotent retries;
+7. compare pinned policy versions for expansions, regressions and high-risk changes;
+8. atomically offboard entitlement, delegation and exception surfaces;
+9. validate the runtime Cedar policy and deterministic OPA governance rules; and
+10. evaluate 18 valid/adversarial cases plus explicit cycle failure injection.
+
+Run from this directory:
+
+```bash
+python lab.py
+pytest tests -q
+opa test policies/opa -v  # optional OPA CLI
+```
+
+Expected results are `release_gate PASS`, **59 Python checks passed**, and **10/10 OPA policy tests passed**. The notebook is committed with deterministic outputs so learners can inspect the target state before rerunning it.
 
 ---
 
@@ -1438,30 +1453,14 @@ The notebook implements:
 
 # References
 
-- OpenFGA — Authorization Concepts  
-  https://openfga.dev/docs/learn
-- OpenFGA — Modeling  
-  https://openfga.dev/docs/modeling
-- OpenFGA — ReBAC  
-  https://openfga.dev/docs/learn/rebac
-- Google Zanzibar paper  
-  https://research.google/pubs/zanzibar-googles-consistent-global-authorization-system/
-- Cedar Policy Language  
-  https://docs.cedarpolicy.com/
-- Cedar Authorization  
-  https://docs.cedarpolicy.com/auth/authorization.html
-- Cedar Schema  
-  https://docs.cedarpolicy.com/schema/schema.html
-- Cedar Security  
-  https://docs.cedarpolicy.com/other/security.html
-- Open Policy Agent  
-  https://www.openpolicyagent.org/docs/
-- NIST AI Risk Management Framework  
-  https://www.nist.gov/itl/ai-risk-management-framework
-- NIST AI RMF Generative AI Profile  
-  https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence
-- NIST SP 800-207 — Zero Trust Architecture  
-  https://csrc.nist.gov/pubs/sp/800/207/final
+- [OpenFGA authorization concepts](https://openfga.dev/docs/learn), [modeling](https://openfga.dev/docs/modeling), and [ReBAC](https://openfga.dev/docs/learn/rebac)
+- [OpenFGA immutable authorization models](https://openfga.dev/docs/getting-started/immutable-models), [conditions](https://openfga.dev/docs/modeling/conditions), and [contextual tuples](https://openfga.dev/docs/interacting/contextual-tuples)
+- [Google Zanzibar paper](https://research.google/pubs/zanzibar-googles-consistent-global-authorization-system/)
+- [Cedar policy language](https://docs.cedarpolicy.com/), [authorization semantics](https://docs.cedarpolicy.com/auth/authorization.html), [schemas](https://docs.cedarpolicy.com/schema/schema.html), and [security guidance](https://docs.cedarpolicy.com/other/security.html)
+- [OPA documentation](https://www.openpolicyagent.org/docs/), [management APIs](https://www.openpolicyagent.org/docs/management-introduction), [signed bundles](https://www.openpolicyagent.org/docs/management-bundles), [discovery](https://www.openpolicyagent.org/docs/management-discovery), and [decision logs](https://www.openpolicyagent.org/docs/management-decision-logs)
+- [NIST SP 800-207 — Zero Trust Architecture](https://csrc.nist.gov/pubs/sp/800/207/final)
+- [NIST SP 800-171 Rev. 3 — Protecting Controlled Unclassified Information](https://csrc.nist.gov/pubs/sp/800/171/r3/final), including least-privilege and privilege-review controls
+- [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework) and [Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
 
 ---
 

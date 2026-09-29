@@ -1,41 +1,117 @@
 {
+  "inventory_version": 12,
+  "policy_version": "policy:v20",
+  "captured_at": 1800000000,
   "agents": [
     {
-      "agent_id": "claims-agent",
-      "owner": "claims-platform",
+      "agent_id": "agent:claims",
+      "tenant_id": "tenant:northstar",
+      "owner_id": "team:claims",
       "status": "active",
-      "risk": "R3"
+      "risk_tier": "R3",
+      "last_seen": 1799999940,
+      "workload_id": "spiffe://northstar.example/prod/claims"
     },
     {
-      "agent_id": "research-agent",
-      "owner": "knowledge-platform",
+      "agent_id": "agent:research",
+      "tenant_id": "tenant:northstar",
+      "owner_id": "team:knowledge",
       "status": "active",
-      "risk": "R2"
+      "risk_tier": "R2",
+      "last_seen": 1799996400,
+      "workload_id": "spiffe://northstar.example/prod/research"
     },
     {
-      "agent_id": "legacy-agent",
-      "owner": null,
+      "agent_id": "agent:legacy",
+      "tenant_id": "tenant:northstar",
+      "owner_id": null,
       "status": "active",
-      "risk": "R3"
+      "risk_tier": "R3",
+      "last_seen": 1791360000,
+      "workload_id": "spiffe://northstar.example/legacy"
+    }
+  ],
+  "entitlements": [
+    {
+      "entitlement_id": "ent:claim-read",
+      "principal_id": "agent:claims",
+      "tenant_id": "tenant:northstar",
+      "action": "claim.read",
+      "resource": "claim:483",
+      "source": "policy",
+      "owner_id": "team:claims",
+      "justification": "assigned claim",
+      "risk": "medium",
+      "created_at": 1797408000,
+      "expires_at": 1815552000,
+      "last_used": 1799999940,
+      "version": 1
+    },
+    {
+      "entitlement_id": "ent:legacy-export",
+      "principal_id": "agent:legacy",
+      "tenant_id": "tenant:northstar",
+      "action": "claim.export",
+      "resource": "claims/*",
+      "source": "role",
+      "owner_id": "team:legacy",
+      "justification": "migration",
+      "risk": "critical",
+      "created_at": 1765440000,
+      "expires_at": 1802592000,
+      "last_used": null,
+      "version": 1
     }
   ],
   "delegations": [
     {
+      "delegation_id": "del:alice-claims",
       "delegator": "user:alice",
-      "delegatee": "agent:claims-agent",
-      "actions": [
-        "claim.read",
-        "claim.update"
+      "delegatee": "agent:claims",
+      "tenant_id": "tenant:northstar",
+      "permissions": [
+        {"action": "claim.read", "resource": "claim:483"},
+        {"action": "claim.update", "resource": "claim:483"}
       ],
-      "resource": "claim:483"
+      "parent_id": null,
+      "depth": 0,
+      "max_depth": 2,
+      "redelegable": true,
+      "issued_at": 1799999400,
+      "expires_at": 1800003600,
+      "task_id": "task:483",
+      "active": true
     },
     {
-      "delegator": "agent:claims-agent",
-      "delegatee": "agent:research-agent",
-      "actions": [
-        "document.read"
-      ],
-      "resource": "kb:claims"
+      "delegation_id": "del:claims-research",
+      "delegator": "agent:claims",
+      "delegatee": "agent:research",
+      "tenant_id": "tenant:northstar",
+      "permissions": [{"action": "claim.read", "resource": "claim:483"}],
+      "parent_id": "del:alice-claims",
+      "depth": 1,
+      "max_depth": 2,
+      "redelegable": false,
+      "issued_at": 1799999700,
+      "expires_at": 1800001800,
+      "task_id": "task:483",
+      "active": true
+    }
+  ],
+  "exceptions": [
+    {
+      "exception_id": "exc:bulk-export",
+      "principal_id": "agent:claims",
+      "tenant_id": "tenant:northstar",
+      "permission": {"action": "claim.export", "resource": "claim:483"},
+      "reason": "regulatory response",
+      "approver_ids": ["security:bob", "data-owner:carol"],
+      "controls": ["human approval", "export watermark"],
+      "ticket_id": "GRC-1042",
+      "issued_at": 1800000000,
+      "expires_at": 1800003600,
+      "policy_version": "policy:v20",
+      "revoked": false
     }
   ]
 }
