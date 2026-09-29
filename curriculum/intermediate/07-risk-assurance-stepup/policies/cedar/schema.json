@@ -1,0 +1,79 @@
+{
+  "": {
+    "entityTypes": {
+      "Agent": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "agentId": {"type": "String", "required": true},
+            "tenantId": {"type": "String", "required": true},
+            "subjectId": {"type": "String", "required": true},
+            "taskId": {"type": "String", "required": true},
+            "workloadId": {"type": "String", "required": true}
+          },
+          "additionalAttributes": false
+        }
+      },
+      "Claim": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "tenantId": {"type": "String", "required": true},
+            "ownerId": {"type": "String", "required": true},
+            "version": {"type": "Long", "required": true}
+          },
+          "additionalAttributes": false
+        }
+      }
+    },
+    "commonTypes": {
+      "RiskContext": {
+        "type": "Record",
+        "attributes": {
+          "tokenValid": {"type": "Boolean", "required": true},
+          "taskId": {"type": "String", "required": true},
+          "workloadId": {"type": "String", "required": true},
+          "taskActive": {"type": "Boolean", "required": true},
+          "workloadAttested": {"type": "Boolean", "required": true},
+          "workloadCurrent": {"type": "Boolean", "required": true},
+          "scope": {"type": "String", "required": true},
+          "humanAAL": {"type": "Long", "required": true},
+          "requiredAAL": {"type": "Long", "required": true},
+          "phishingResistant": {"type": "Boolean", "required": true},
+          "nonExportableKey": {"type": "Boolean", "required": true},
+          "requireNonExportableKey": {"type": "Boolean", "required": true},
+          "authAgeSeconds": {"type": "Long", "required": true},
+          "maxAuthAgeSeconds": {"type": "Long", "required": true},
+          "riskScore": {"type": "Long", "required": true},
+          "now": {"type": "Long", "required": true},
+          "policyVersion": {"type": "Long", "required": true},
+          "riskModelVersion": {"type": "Long", "required": true},
+          "signalVersion": {"type": "Long", "required": true},
+          "proposalDigest": {"type": "String", "required": true},
+          "approvalUsed": {"type": "Boolean", "required": true},
+          "approvalExpiresAt": {"type": "Long", "required": true},
+          "approvalCount": {"type": "Long", "required": true},
+          "requiredApprovalCount": {"type": "Long", "required": true},
+          "approvalProposalDigest": {"type": "String", "required": true},
+          "approvalSubjectId": {"type": "String", "required": true},
+          "approvalTenantId": {"type": "String", "required": true},
+          "approvalTaskId": {"type": "String", "required": true},
+          "approvalAgentId": {"type": "String", "required": true},
+          "approvalPolicyVersion": {"type": "Long", "required": true},
+          "approvalRiskModelVersion": {"type": "Long", "required": true},
+          "approvalSignalVersion": {"type": "Long", "required": true},
+          "approvalResourceVersion": {"type": "Long", "required": true},
+          "separationOfDutiesSatisfied": {"type": "Boolean", "required": true}
+        },
+        "additionalAttributes": false
+      }
+    },
+    "actions": {
+      "ReadClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "RiskContext"}}},
+      "CreatePayment": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "RiskContext"}}},
+      "DisableAudit": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "RiskContext"}}}
+    }
+  }
+}
