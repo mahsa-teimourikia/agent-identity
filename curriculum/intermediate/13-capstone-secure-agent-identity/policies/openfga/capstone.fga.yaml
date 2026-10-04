@@ -1,0 +1,66 @@
+name: Capstone relationship and tenant tests
+model_file: ./model.fga
+
+tuples:
+  - user: agent:claims
+    relation: member
+    object: tenant:northstar
+  - user: agent:attacker
+    relation: member
+    object: tenant:evil
+  - user: tenant:northstar
+    relation: tenant
+    object: task:483
+  - user: agent:claims
+    relation: assignee
+    object: task:483
+  - user: tenant:northstar
+    relation: tenant
+    object: claim:483
+  - user: task:483
+    relation: task
+    object: claim:483
+  - user: agent:claims
+    relation: editor
+    object: claim:483
+  - user: agent:attacker
+    relation: reader
+    object: claim:483
+  - user: tenant:northstar
+    relation: tenant
+    object: tool:claims-update
+  - user: agent:claims
+    relation: invoker
+    object: tool:claims-update
+
+tests:
+  - name: assigned tenant editor can update claim
+    check:
+      - user: agent:claims
+        object: claim:483
+        assertions:
+          can_update: true
+  - name: cross tenant direct reader cannot read claim
+    check:
+      - user: agent:attacker
+        object: claim:483
+        assertions:
+          can_read: false
+  - name: unassigned agent cannot update claim
+    check:
+      - user: agent:unknown
+        object: claim:483
+        assertions:
+          can_update: false
+  - name: tenant invoker can invoke tool
+    check:
+      - user: agent:claims
+        object: tool:claims-update
+        assertions:
+          can_invoke: true
+  - name: unknown agent cannot invoke tool
+    check:
+      - user: agent:unknown
+        object: tool:claims-update
+        assertions:
+          can_invoke: false

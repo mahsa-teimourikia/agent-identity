@@ -2,6 +2,81 @@
 
 > **Goal:** integrate human identity, logical agent identity, workload identity, delegation, OAuth/OIDC, MCP, policy engines, resource authorization, HITL, guardrails, observability, adversarial testing, and governance into one production-style enterprise architecture.
 
+| Course facts | Value |
+|---|---|
+| Level | Intermediate capstone |
+| Estimated time | 6–8 hours |
+| Last reviewed | 2026-10-04 |
+| Prerequisites | Intermediate Courses 1–12 |
+| Credentials | None; every exercise is local and synthetic |
+
+## Start here
+
+From this directory:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python lab.py
+pytest -q tests
+```
+
+Use the executed notebook for the guided investigation and `lab.py` as the
+reusable system under test. The release gate requires 100% execution of valid
+scenarios, 0% execution of invalid scenarios, 100% expected terminal-state
+accuracy, and zero forbidden effects.
+
+## Scenario and deliverable
+
+You are the security architect for Northstar Insurance. Its claims agent can
+read and update an assigned claim, search approved knowledge, write task
+memory, delegate a read-only research subtask, and propose payments. Your
+deliverable is not a diagram alone: it is an executable assurance case that
+connects every architectural claim to implementation evidence and a failing
+adversarial test.
+
+## Success criteria
+
+You must be able to prove that:
+
+1. authenticated human, logical agent, workload, artifact, task, delegation, and sender identities remain distinct and bound;
+2. OAuth scope, OpenFGA relationships, contextual policy, and resource-side constraints all agree before an effect;
+3. RAG and memory are filtered before sensitive content reaches the model;
+4. sub-agent authority is a strict subset of the parent delegation;
+5. MCP server and audience substitution and token passthrough fail closed;
+6. approval binds one exact proposal and commit-time state;
+7. unknown outcomes reconcile without duplicate effects;
+8. every allow and deny produces privacy-minimized, tamper-evident evidence.
+
+## Scope and non-goals
+
+The capstone is a deterministic reference architecture, not a production IdP,
+SPIRE deployment, policy control plane, payment service, or audit ledger. Its
+keys and identities are fixtures. Production deployment requires managed keys,
+real attestation and authentication, transactional durable storage,
+resource-service enforcement, policy distribution, telemetry access control,
+and tested incident procedures.
+
+## Current ecosystem map
+
+| Concern | Executed artifact | Common production choices | Key boundary |
+|---|---|---|---|
+| Human/API identity | trusted `SecurityContext` | OIDC, OAuth 2.x, sender-constrained tokens | validation is not object authorization |
+| Workload identity | SPIFFE ID + artifact binding | SPIFFE/SPIRE, cloud workload identity, attestation | workload is not the logical agent |
+| Structured intent | strict Pydantic v2 model | JSON Schema, Pydantic, protobuf | schema validity is not authority |
+| Context policy | reference PDP + OPA + Cedar | OPA, Cedar, cloud IAM, application ABAC | PDP decisions require a PEP |
+| Relationships | OpenFGA tenant/task intersection | OpenFGA and other ReBAC systems | relationships do not model all risk |
+| Agent runtime | OpenAI Agents SDK function tools | Agents SDK, custom runtimes | SDK approval is not application authorization |
+| Durable orchestration | compiled LangGraph | LangGraph checkpointers, workflow engines | checkpoints do not make effects exactly-once |
+| Tool protocol | MCP Python SDK v2 server | current MCP SDKs | tool annotations are not enforcement |
+| Evidence | hash-chained minimal events | OpenTelemetry plus append-only audit | trace context is not identity |
+
+The tested line for this revision uses OpenAI Agents SDK 0.22, MCP Python SDK
+2.2, LangGraph 1.2, LangChain 1.3, Pydantic 2.13, CedarPy 4, and OPA 1.x.
+These APIs evolve quickly; validate pinned versions and current primary
+documentation before production adoption.
+
 ## Architecture
 
 ```text
@@ -228,7 +303,12 @@ MCP connectivity is not business authorization. Verify MCP server identity, toke
 
 ## 21. MCP OAuth security
 
-Current MCP authorization guidance uses OAuth protected-resource mechanisms including Protected Resource Metadata, authorization-server discovery, resource indicators, PKCE and audience/resource-bound tokens. Implement against the current specification rather than stale examples.
+The stable 2025-11-25 MCP authorization baseline uses OAuth
+protected-resource mechanisms including Protected Resource Metadata,
+authorization-server discovery, resource indicators, PKCE and
+audience/resource-bound tokens. MCP continues to evolve; record the exact
+protocol and SDK version used by each deployment and do not silently adopt
+release-candidate behavior.
 
 ## 22. Prevent token passthrough
 
@@ -334,7 +414,41 @@ If an arrow has no clear answer, the design is incomplete.
 
 ## Practical notebook
 
-The notebook builds the complete scenario through identity registration, workload binding, OAuth audience validation, delegation, attenuation, typed intents, PDP/PEP, RAG/memory authorization, multi-agent delegation, MCP authorization, HITL transaction binding, evidence, revocation, attack tests, policy mutations and an architecture scorecard.
+The notebook builds one coherent claim workflow through registry and workload
+binding, OAuth validation, typed intent, relationship and contextual policy,
+RAG/memory isolation, attenuated sub-agent delegation, MCP authorization,
+signed approval, commit-time reauthorization, unknown-outcome reconciliation,
+result validation, hash-chained evidence, revocation, dependency failure,
+framework adapters, and the quantitative release gate.
+
+### Claim-to-proof map
+
+| Claim | Implementation proof | Verification |
+|---|---|---|
+| Model output cannot create trusted identity | `ModelIntent(extra="forbid")` separate from `SecurityContext` | identity-injection tests |
+| Agent execution binds approved runtime and artifact | registry + `_identity_failure` | workload/artifact/quarantine tests |
+| OAuth and MCP tokens are resource bound | gateway and tool audiences plus no-passthrough rule | issuer/audience/server/passthrough tests |
+| Relationship and contextual policies compose | relationship tuples plus reference PDP, OPA, Cedar | Python, Rego, Cedar, and OpenFGA suites |
+| RAG/memory content stays task and class scoped | pre-effect resource checks | restricted-data and cross-task tests |
+| Child authority only attenuates | exact child action/resource constraints | example and Hypothesis property tests |
+| Approval is exact and single use | signed manifest + atomic registry | tamper/expiry/change/replay/race tests |
+| Retries cannot duplicate an uncertain effect | operation ledger + proposal digest + receipt | lost-response reconciliation test |
+| Evidence is reconstructable without secrets | hash-chained minimal events | privacy and tamper tests |
+
+### Artifact map
+
+| Artifact | Purpose | Validation |
+|---|---|---|
+| `lab.py` | End-to-end platform, 27 scenarios, release gate | `python lab.py` |
+| `capstone_secure_agent_identity.ipynb` | Executed guided assurance case | notebook validator |
+| `tests/test_capstone_platform.py` | 56 adversarial, property, SDK, and integration checks | `pytest -q tests` |
+| `policies/opa/` | Rego v1 policy and 14 tests | `opa test policies/opa -v` |
+| `policies/cedar/` | Executed default-deny/forbid policy | CedarPy integration test |
+| `policies/openfga/` | Tenant/task intersection and 5 checks | `fga model test --tests ...` |
+| `agents_sdk/secure_tools.py` | Strict function tools and SDK approval interruption | imported by tests |
+| `langgraph/capstone_graph.py` | Compiled conditional workflow | imported by tests |
+| `protocols/mcp_server.py` | MCP Python SDK v2 tool surface | imported by tests |
+| `architecture/capstone_architecture.mmd` | Traceable enforcement diagram | architecture vocabulary test |
 
 ## Completion criterion
 
@@ -346,30 +460,23 @@ If the system cannot answer those questions, its agent identity architecture is 
 
 ## References
 
-- NIST NCCoE — Agent Identity and Authorization  
-  https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd
-- SPIFFE/SPIRE  
-  https://spiffe.io/
-- OpenAI Agents SDK  
-  https://openai.github.io/openai-agents-python/
-- OpenAI Agents SDK — HITL  
-  https://openai.github.io/openai-agents-python/human_in_the_loop/
-- OpenAI Agents SDK — Guardrails  
-  https://openai.github.io/openai-agents-python/guardrails/
-- OpenAI Agents SDK — MCP  
-  https://openai.github.io/openai-agents-python/mcp/
-- Model Context Protocol  
-  https://modelcontextprotocol.io/specification/2025-11-25
-- Open Policy Agent  
-  https://www.openpolicyagent.org/
-- Cedar  
-  https://docs.cedarpolicy.com/
-- OpenFGA  
-  https://openfga.dev/docs
-- OpenTelemetry  
-  https://opentelemetry.io/
-- OWASP GenAI Security Project  
-  https://genai.owasp.org/
+- [NIST NCCoE — Accelerating the Adoption of Software and AI Agent Identity and Authorization](https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd)
+- [SPIFFE — Workload identity overview](https://spiffe.io/docs/latest/spiffe-about/overview/)
+- [SPIFFE — Workload API](https://spiffe.io/docs/latest/spiffe-specs/spiffe_workload_api/)
+- [OpenAI — Guardrails and approvals](https://developers.openai.com/api/docs/guides/agents/guardrails-approvals)
+- [OpenAI Agents SDK — Python](https://openai.github.io/openai-agents-python/)
+- [OpenAI Agents SDK — Human in the loop](https://openai.github.io/openai-agents-python/human_in_the_loop/)
+- [OpenAI Agents SDK — MCP](https://openai.github.io/openai-agents-python/mcp/)
+- [LangGraph — Thinking in LangGraph](https://docs.langchain.com/oss/javascript/langgraph/thinking-in-langgraph)
+- [Model Context Protocol — Specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
+- [Model Context Protocol — Authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+- [Open Policy Agent — Integration](https://www.openpolicyagent.org/docs/integration)
+- [Open Policy Agent — Policy testing](https://www.openpolicyagent.org/docs/policy-testing)
+- [Cedar — Authorization semantics](https://docs.cedarpolicy.com/auth/authorization.html)
+- [Cedar — Policy validation](https://docs.cedarpolicy.com/policies/validation.html)
+- [OpenFGA — Modeling](https://openfga.dev/docs/modeling)
+- [OpenTelemetry — Security guidance](https://opentelemetry.io/docs/security/)
+- [OWASP GenAI — Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)
 
 ## Next
 

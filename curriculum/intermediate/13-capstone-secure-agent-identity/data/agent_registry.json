@@ -1,18 +1,40 @@
 {
-  "agent:claims": {
-    "registered": true,
-    "owner": "claims-platform",
-    "risk_tier": "high",
-    "approved_workloads": [
-      "spiffe://corp.example/prod/claims-agent"
-    ]
-  },
-  "agent:research": {
-    "registered": true,
-    "owner": "claims-platform",
-    "risk_tier": "medium",
-    "approved_workloads": [
-      "spiffe://corp.example/prod/research-agent"
-    ]
+  "registry_version": "registry/2026-10-04",
+  "agents": {
+    "agent:claims": {
+      "tenant_id": "tenant:northstar",
+      "owner": "team:claims-platform",
+      "business_purpose": "Process assigned synthetic insurance claims",
+      "risk_tier": "high",
+      "lifecycle_status": "active",
+      "approved_workloads": ["spiffe://northstar.example/prod/claims"],
+      "approved_artifacts": ["sha256:claims-release-42"],
+      "approved_tools": [
+        "claims.get",
+        "claims.update",
+        "knowledge.search",
+        "memory.write",
+        "agents.delegate",
+        "payments.create"
+      ],
+      "data_classes": ["internal"],
+      "review_due_at": 1800486400,
+      "exception_ids": [],
+      "test_status": "passing"
+    },
+    "agent:research": {
+      "tenant_id": "tenant:northstar",
+      "owner": "team:claims-platform",
+      "business_purpose": "Search approved claim knowledge for a parent task",
+      "risk_tier": "medium",
+      "lifecycle_status": "active",
+      "approved_workloads": ["spiffe://northstar.example/prod/research"],
+      "approved_artifacts": ["sha256:research-release-7"],
+      "approved_tools": ["knowledge.search"],
+      "data_classes": ["internal"],
+      "review_due_at": 1800486400,
+      "exception_ids": [],
+      "test_status": "passing"
+    }
   }
 }

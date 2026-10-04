@@ -1,15 +1,23 @@
 flowchart LR
-U[Human / IdP] --> G[Gateway / PEP]
-G --> A[Agent / LLM]
-A --> I[Structured Intent]
-I --> P[PDP]
-P -->|Allow| T[Tool Router / PEP]
-P -->|Step-up| H[Human Approval]
-H --> P
-T --> C[Claims API]
-T --> R[RAG / Memory]
-T --> M[MCP]
-T --> S[Sub-agent]
-G --> E[Evidence]
-P --> E
-T --> E
+  U[Human / IdP<br/>OIDC + sender binding] --> G[Agent Gateway / PEP]
+  W[SPIFFE Workload +<br/>artifact attestation] --> G
+  AR[Agent Registry<br/>owner + lifecycle + review] --> G
+  G --> A[Agent / LLM<br/>untrusted planner]
+  A --> I[Typed Intent<br/>strict schema]
+  I --> P[Context PDP<br/>OPA or Cedar]
+  F[OpenFGA<br/>tenant + task relationship] --> P
+  D[Delegation<br/>actions + resources + expiry] --> P
+  P -->|Allow| T[Tool Router / commit PEP]
+  P -->|Step-up| H[Exact Signed Approval]
+  H --> T
+  T -->|re-authorize| P
+  T --> C[Claims API]
+  T --> R[RAG + Memory<br/>pre-model filters]
+  T --> M[MCP<br/>server + audience]
+  T --> S[Sub-agent<br/>attenuated authority]
+  T --> X[Payment API<br/>idempotency + receipt]
+  G --> E[Hash-chained Evidence]
+  P --> E
+  T --> E
+  RV[Revocation + risk signals] --> G
+  RV --> P

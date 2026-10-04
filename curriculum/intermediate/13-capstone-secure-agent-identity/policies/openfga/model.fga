@@ -1,17 +1,31 @@
 model
   schema 1.1
 type user
+type tenant
+  relations
+    define member: [user, agent]
 type agent
   relations
     define operator: [user]
     define can_delegate_to: [agent]
+    define tenant: [tenant]
+type task
+  relations
+    define assignee: [agent]
+    define tenant: [tenant]
 type claim
   relations
+    define tenant: [tenant]
+    define task: [task]
     define reader: [user, agent]
     define editor: [user, agent]
-    define can_read: reader or editor
-    define can_update: editor
+    define tenant_member: member from tenant
+    define task_assignee: assignee from task
+    define can_read: (reader or editor) and tenant_member and task_assignee
+    define can_update: editor and tenant_member and task_assignee
 type tool
   relations
     define invoker: [agent]
-    define can_invoke: invoker
+    define tenant: [tenant]
+    define tenant_member: member from tenant
+    define can_invoke: invoker and tenant_member
