@@ -16,4 +16,6 @@ type claim
   relations
     define tenant: [tenant]
     define reader: [user, agent]
-    define can_read: reader
+    # Direct assignment is necessary but not sufficient: the reader must also
+    # belong to the tenant that owns the claim.
+    define can_read: reader and member from tenant

@@ -1,8 +1,12 @@
 # Intermediate 11 — Adversarial Authorization Testing for Agents
 
-![Adversarial Authorization Testing](images/adversarial-authorization-testing.png)
-
 > **Goal:** stop asking whether an authorization design looks secure and start proving that it resists realistic adversarial behavior.
+
+**Level:** Intermediate · **Estimated time:** 3–4 hours · **Last reviewed:** 2026-10-04
+
+**Prerequisites:** OAuth/JWT validation, PDP/PEP architecture, delegated authority, Python/pytest, and the authorization-observability concepts from Intermediate 10.
+
+**Start here:** [run the executed notebook](adversarial_authorization_testing.ipynb), inspect the reusable [attack harness](lab.py), then run `pytest -q tests` and `opa test --fail-on-empty --coverage policies/opa`. The lab is defensive and local: use only synthetic identities and systems you are authorized to test.
 
 Agent systems introduce authorization paths that conventional API tests often miss:
 
@@ -44,6 +48,28 @@ You will learn to:
 - create OPA, Cedar, and OpenFGA regression tests;
 - design CI/CD authorization security gates;
 - measure attack coverage and authorization security posture.
+
+## Success criteria
+
+You are done when you can demonstrate a normal authorized effect and prove that the same effect cannot occur after token, identity, delegation, tenant/resource, tool, parameter, time, or runtime-state mutation. The course gate requires the attack corpus to return the expected denial reason—not merely any error—across at least five threat categories, a PEP bypass to produce no receipt, all 50 Python cases to pass, all 13 OPA cases to pass with 100% policy-line coverage, and all four OpenFGA model checks to pass.
+
+## Scope and safety boundary
+
+This is an authorization regression lab, not permission to probe external targets. Do not use production tenants, credentials, customer records, or live third-party MCP servers. The symmetric JWT key, deterministic Ed25519 key and in-memory state are teaching fixtures. Production systems need asymmetric issuer keys, managed workload identities, rotation/revocation, durable idempotency, constrained test environments and explicit rules of engagement.
+
+## Current landscape
+
+| Practice/tool | Best use here | Limitation to test around |
+|---|---|---|
+| pytest + Hypothesis | Example, property, metamorphic and stateful invariants | Generated input is only useful with a trustworthy oracle |
+| PyJWT | Real signature/issuer/audience/claim parsing | Callers must pin algorithms and separately bind business context |
+| OPA `opa test` | Rego positive/negative tests, fail-on-empty and coverage | Line coverage is not mutation score or PEP coverage |
+| Cedar schema validation + authorization tests | Type/request validation, forbid precedence, default deny and diagnostics | Erroring policies are skipped; applications must inspect diagnostics |
+| OpenFGA model tests | Relationship checks, negative tuples, ListObjects/ListUsers behavior | Pin model IDs and separately test application context and enforcement |
+| OWASP Agentic/GenAI catalogs | Seed tool misuse, identity/privilege abuse and excessive-agency scenarios | Catalogs cannot identify system-specific bypass paths |
+| MCP protocol/security guidance | Test resource-bound tokens, confused-deputy defenses, tool boundaries and no token passthrough | Protocol compliance does not authorize a particular business effect |
+
+The stable MCP `2025-11-25` line includes authorization extensions and additional enterprise controls. A `2026-07-28` release candidate introduces a stateless core and further authorization hardening; treat RC features as emerging, pin the negotiated protocol/SDK version, and maintain tests for every supported revision. Open problems include cross-agent authority provenance, semantic tool-definition substitution, privacy-safe adversarial corpora and complete PEP-path discovery in dynamic infrastructures.
 
 ---
 
@@ -1273,43 +1299,21 @@ Threat catalogs are inputs to testing, not substitutes for system-specific threa
 
 # 58. Practical notebook
 
-The notebook builds a simulated claims-processing agent platform and attacks:
+The executed notebook uses one cohesive Northstar claims scenario and the reusable `lab.py` oracle. It exercises:
 
-1. trusted-field identity spoofing;
-2. wrong-audience token substitution;
-3. expired token use;
-4. replay;
-5. confused deputy;
-6. ambient authority;
-7. delegation scope escalation;
-8. resource expansion;
-9. actor substitution;
-10. re-delegation;
-11. delegation-depth abuse;
-12. cross-tenant IDOR;
-13. policy bypass;
-14. PEP bypass;
-15. fail-open behavior;
-16. stale authorization cache;
-17. parameter tampering;
-18. tool substitution;
-19. MCP server substitution;
-20. agent-to-agent laundering;
-21. prompt-injection pressure;
-22. TOCTOU;
-23. one-time approval race;
-24. default-allow bug;
-25. request fuzzing;
-26. property-based tenant isolation;
-27. metamorphic tests;
-28. policy mutation tests;
-29. attack coverage;
-30. severity scoring;
-31. regression reporting;
-32. OPA test examples;
-33. Cedar adversarial policy examples;
-34. OpenFGA model tests;
-35. CI/CD security gate design.
+1. PyJWT signature, fixed-algorithm, issuer, audience, time, lifetime and required-context validation;
+2. independent principal, logical-agent and SPIFFE-style workload binding;
+3. full-chain delegation attenuation across actions, resources, tenant, task, time, depth and redelegation;
+4. cross-tenant and IDOR/BOLA mutations;
+5. MCP tool/server/schema binding and prompt-injected intent as an untrusted request;
+6. Ed25519-authenticated PDP decisions and fail-closed dependency behavior;
+7. PEP checks for decision presence, exact proposal binding, expiry, revocation, resource-version TOCTOU and idempotency;
+8. a deterministic ten-case attack corpus with stable expected reason codes;
+9. Hypothesis-backed property testing, metamorphic checks and mutation-score interpretation;
+10. 13 executable OPA tests at 100% policy-line coverage, four OpenFGA model checks, plus Cedar validation/test guidance;
+11. failure injection, release evaluation and production translation.
+
+The security regression suite contains 50 Python cases. It covers malformed and substituted tokens, delegation graph mutations, tool identity, signatures, parameter swaps, PEP bypass, replay/idempotency, fail-closed behavior and generated argument mutations.
 
 ---
 
@@ -1407,30 +1411,18 @@ The notebook builds a simulated claims-processing agent platform and attacks:
 
 # References
 
-- OpenFGA — Testing Models  
-  https://openfga.dev/docs/modeling/testing
-- OpenFGA — Modeling  
-  https://openfga.dev/docs/modeling
-- OpenFGA — Store File Format  
-  https://openfga.dev/docs/modeling/store-file-format
-- Cedar Policy Language  
-  https://docs.cedarpolicy.com/
-- Cedar — Authorization Semantics  
-  https://docs.cedarpolicy.com/auth/authorization.html
-- Cedar — Security  
-  https://docs.cedarpolicy.com/other/security.html
-- Open Policy Agent — Policy Testing  
-  https://www.openpolicyagent.org/docs/policy-testing
-- Open Policy Agent  
-  https://www.openpolicyagent.org/docs/
-- OWASP GenAI Security Project  
-  https://genai.owasp.org/
-- MITRE ATLAS  
-  https://atlas.mitre.org/
-- OAuth 2.0 Security Best Current Practice — RFC 9700  
-  https://www.rfc-editor.org/rfc/rfc9700
-- OAuth 2.0 Demonstrating Proof of Possession (DPoP) — RFC 9449  
-  https://www.rfc-editor.org/rfc/rfc9449
+- [Open Policy Agent: policy testing, fail-on-empty and coverage](https://www.openpolicyagent.org/docs/policy-testing)
+- [Cedar policy validation and validation soundness](https://docs.cedarpolicy.com/policies/validation.html)
+- [Cedar authorization semantics and diagnostics](https://docs.cedarpolicy.com/auth/authorization.html)
+- [OpenFGA model testing](https://openfga.dev/docs/modeling/testing)
+- [OpenFGA store file format](https://openfga.dev/docs/modeling/store-file-format)
+- [OWASP LLM06:2025 Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)
+- [OWASP Top 10 for Agentic Applications](https://genai.owasp.org/download/52117/)
+- [MCP November 2025 release and authorization extensions](https://blog.modelcontextprotocol.io/posts/2025-11-25-first-mcp-anniversary/)
+- [MCP 2026-07-28 release candidate](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/)
+- [MITRE ATLAS](https://atlas.mitre.org/)
+- [OAuth 2.0 Security Best Current Practice — RFC 9700](https://www.rfc-editor.org/rfc/rfc9700)
+- [OAuth 2.0 Demonstrating Proof of Possession (DPoP) — RFC 9449](https://www.rfc-editor.org/rfc/rfc9449)
 
 ---
 

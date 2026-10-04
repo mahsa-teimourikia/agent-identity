@@ -7,3 +7,4 @@ networkx>=3.3
 pandas>=2.2
 rich>=13.8
 httpx>=0.27
+opa-python-client>=1.3

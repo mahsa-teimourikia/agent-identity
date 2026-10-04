@@ -1,20 +1,28 @@
 {
   "course": "Intermediate 11",
   "summary": {
-    "tests": 35,
-    "passed": 33,
-    "failed": 2
+    "tests": 10,
+    "passed": 10,
+    "failed": 0,
+    "prevention_rate": 1.0,
+    "categories_covered": [
+      "delegation",
+      "identity",
+      "resource",
+      "token",
+      "tool"
+    ]
   },
   "findings": [
     {
-      "id": "AUTHZ-PEP-001",
-      "severity": "critical",
-      "title": "Direct backend path bypasses PEP"
+      "id": "AUTHZ-REGRESSION-001",
+      "severity": "informational",
+      "title": "All expected adversarial mutations were denied for the expected reason"
     },
     {
-      "id": "AUTHZ-CACHE-002",
-      "severity": "high",
-      "title": "Cached allow survives delegation revocation"
+      "id": "AUTHZ-COVERAGE-002",
+      "severity": "informational",
+      "title": "PEP failure injection produced no execution receipt"
     }
   ]
 }
