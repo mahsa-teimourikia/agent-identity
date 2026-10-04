@@ -1,8 +1,12 @@
 # Intermediate 10 — Authorization Observability & Audit Analytics for Agents
 
-![Authorization Observability & Audit Analytics](images/authorization-observability-audit-analytics.png)
-
 > **Goal:** make every important agent authorization decision explainable, traceable, privacy-aware, analyzable and reconstructable.
+
+**Level:** Intermediate · **Estimated time:** 3–4 hours · **Last reviewed:** 2026-10-04
+
+**Prerequisites:** PDP/PEP authorization flow, Python, JSON Schema, hashes and signatures, and basic distributed tracing. Complete Intermediate 09 first if policy decision provenance is unfamiliar.
+
+**Start here:** [run the practical notebook](observability_audit_analytics.ipynb), inspect the reusable [lab implementation](lab.py), then run `pytest -q tests` and the OPA policy tests. All data is synthetic; never paste production credentials, prompts, or customer records into the lab.
 
 Authorization is not complete when a PDP returns:
 
@@ -28,6 +32,8 @@ can we prove this later?
 
 This course builds an authorization-observability layer spanning decision logs, distributed traces, delegation provenance, audit evidence, anomaly analytics, privacy controls and continuous governance.
 
+The operational thesis is precise: telemetry is trustworthy only when producers are authenticated, sensitive content is minimized, decisions are bound to actual effects, missing evidence is detectable, and integrity claims are independently checkable.
+
 ---
 
 ## Learning outcomes
@@ -51,6 +57,34 @@ You will learn to:
 - define SIEM detections and dashboards;
 - create continuous-control-monitoring metrics;
 - build audit-ready evidence without logging everything.
+
+## Success criteria
+
+You are done when you can explain and demonstrate:
+
+- 100% decision coverage over a known population of protected operations;
+- exactly one timely, correctly bound enforcement receipt for each expected execution;
+- separation of blocked attempts and operational warnings from actual forbidden effects;
+- detection of gaps, conflicts, PEP bypass, denied execution, stale decisions and tampering;
+- a privacy-safe OpenTelemetry export and tested OPA mask/drop policy; and
+- a signed checkpoint whose scope and limitations you can defend.
+
+## Scope and risk boundaries
+
+This course does not teach SIEM administration, replace legal retention advice, or claim that a hash chain makes storage immutable. Trace context is correlation data—not identity, authority, or a producer signature. The deterministic signing key and in-memory stores are teaching mechanisms; production systems require managed workload keys, durable delivery, access control, rotation, revocation and independently controlled checkpoints.
+
+## Technology landscape and maturity
+
+| Layer | Common option | What it contributes | Important limitation |
+|---|---|---|---|
+| Signal transport | OpenTelemetry SDK/Collector | Vendor-neutral logs, traces, metrics and context propagation | Collection does not prove authorization or completeness |
+| Policy decision evidence | OPA decision logs | Input/result, bundle metadata, masking/drop hooks and delivery status | Mask/drop/rate limiting can remove evidence unless governed and monitored |
+| Policy diagnostics | Cedar | Determining policies and evaluation errors | Applications must inspect diagnostics; erroring policies are skipped during evaluation |
+| Relationship decisions | OpenFGA | Tuple/model context for ReBAC checks | Application must preserve request and enforcement correlation |
+| Security analytics | SIEM/OCSF/ECS pipelines | Search, normalization, detections and case workflows | Schemas and detections do not authenticate source events by themselves |
+| Integrity evidence | Hash/Merkle chains plus signed checkpoints | Detects later modification, deletion or reordering | Cannot prevent a privileged party rewriting both evidence and locally held proofs |
+
+Established practice includes the stable OpenTelemetry Logs Data Model, W3C Trace Context, signed producer evidence, strict schemas, minimization and explicit coverage denominators. OpenTelemetry GenAI semantic conventions remain fast-moving and live in a dedicated repository, so pin convention versions and isolate experimental attributes. Open problems include cross-vendor end-to-end decision/effect semantics, privacy-preserving investigation of agent content, and completeness proofs across asynchronous multi-agent workflows.
 
 ---
 
@@ -419,6 +453,8 @@ erase evidence of sensitive high-risk actions
 
 Audit policy should define what may be dropped.
 
+OPA decision-log rate limiting may also drop events. Monitor upload status, collector delivery and sequence gaps, and keep mandatory high-risk audit evidence on a path whose completeness does not depend on optional performance telemetry.
+
 ---
 
 # 17. Cedar diagnostics
@@ -450,7 +486,7 @@ This distinction matters for observability.
 
 # 18. Cedar error observability
 
-Policy evaluation errors should be surfaced separately from ordinary denies.
+Policy evaluation errors should be surfaced separately from ordinary denies. Cedar skips policies that error and continues evaluating the rest, so an error is not automatically equivalent to a deny. The application must inspect diagnostics and adopt a risk-appropriate fail-closed policy where missing or invalid entity data is safety-critical.
 
 Example:
 
@@ -522,7 +558,7 @@ This provides causal context that independent log lines cannot.
 
 # 21. OpenTelemetry
 
-OpenTelemetry provides vendor-neutral APIs, SDKs and protocols for telemetry.
+OpenTelemetry provides vendor-neutral APIs, SDKs and protocols for telemetry. Its stable Logs Data Model represents records using fields such as timestamp, observed timestamp, trace/span IDs, body, resource and attributes; events are specialized log records rather than a separate proof system.
 
 Use it to propagate:
 
@@ -558,7 +594,7 @@ agent identity
 messages/tool interactions when explicitly enabled
 ```
 
-Do not freeze your own schema to experimental attribute names without a compatibility strategy.
+Do not freeze your own schema to experimental attribute names without a compatibility strategy. Pin a semantic-convention version, keep authorization-specific attributes in a documented namespace, and test migrations before changing dashboards or detections.
 
 ---
 
@@ -597,6 +633,8 @@ tool_call_id
 ```
 
 Do not overload one identifier to mean all of these things.
+
+Treat incoming W3C `traceparent` and `tracestate` as untrusted correlation input: validate their format, never place PII in them, and restart or sanitize context at trust boundaries when required. Possessing a trace ID grants no authority.
 
 ---
 
@@ -1234,36 +1272,20 @@ It is one component of broader AI risk management—not a substitute for it.
 
 # 57. Practical notebook
 
-The notebook implements:
+The executed notebook and reusable `lab.py` implement one cohesive Northstar Insurance scenario:
 
-1. canonical event schema;
-2. synthetic authorization events;
-3. trace/decision correlation;
-4. delegation provenance;
-5. reason-code analytics;
-6. PDP latency analytics;
-7. deny spikes;
-8. suspicious allows;
-9. policy-version drift;
-10. new agent-tool pairs;
-11. delegation-depth anomalies;
-12. PEP bypass detection;
-13. decision/action binding;
-14. privacy classification;
-15. redaction;
-16. HMAC pseudonymization;
-17. OPA-style masking;
-18. Cedar-style diagnostics;
-19. OTel span modeling;
-20. metrics;
-21. SIEM rules;
-22. hash-chained evidence;
-23. tamper detection;
-24. signed evidence-bundle concepts;
-25. audit completeness;
-26. incident reconstruction;
-27. continuous control monitoring;
-28. adversarial tests.
+1. strict, versioned decision and enforcement contracts;
+2. Ed25519 producer authentication and tenant admission;
+3. keyed pseudonyms and exact security-critical request digests;
+4. at-least-once delivery reconciliation, conflict detection and producer sequence gaps;
+5. decision-to-action binding, PEP bypass, denied execution, stale decisions and duplicate effects;
+6. an actual OpenTelemetry Python SDK span with minimized attributes;
+7. a tested OPA mask/drop policy that preserves mandatory evidence;
+8. metrics with explicit protected-operation and expected-execution denominators;
+9. a tamper-evident chain and signed external-checkpoint model;
+10. failure injection, incident reconstruction and a fail-closed release gate.
+
+The accompanying automated suite exercises 54 Python cases and 10 OPA policy cases, including malformed evidence, invalid signatures, cross-tenant input, concurrency, retries, privacy leaks, chain tampering and dashboard projections.
 
 ---
 
@@ -1348,28 +1370,18 @@ The notebook implements:
 
 # References
 
-- OpenTelemetry — Documentation  
-  https://opentelemetry.io/docs/
-- OpenTelemetry — Semantic Conventions  
-  https://opentelemetry.io/docs/specs/semconv/
-- OpenTelemetry — GenAI observability overview (2026)  
-  https://opentelemetry.io/blog/2026/genai-observability/
-- OpenTelemetry — AI Agent Observability  
-  https://opentelemetry.io/blog/2025/ai-agent-observability/
-- Open Policy Agent — Decision Logs  
-  https://www.openpolicyagent.org/docs/management-decision-logs
-- Open Policy Agent — Configuration  
-  https://www.openpolicyagent.org/docs/configuration
-- Cedar — Authorization  
-  https://docs.cedarpolicy.com/auth/authorization.html
-- Cedar — Security  
-  https://docs.cedarpolicy.com/other/security.html
-- OpenFGA — Documentation  
-  https://openfga.dev/docs
-- NIST AI Risk Management Framework  
-  https://www.nist.gov/itl/ai-risk-management-framework
-- NIST AI RMF Generative AI Profile  
-  https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence
+- [OpenTelemetry Logs Data Model](https://opentelemetry.io/docs/specs/otel/logs/data-model/)
+- [OpenTelemetry Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/)
+- [OpenTelemetry GenAI conventions repository transition](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+- [OpenTelemetry GenAI attribute registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/)
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/)
+- [Open Policy Agent decision logs, masking, dropping and rate limiting](https://www.openpolicyagent.org/docs/management-decision-logs)
+- [Cedar authorization decisions and diagnostics](https://docs.cedarpolicy.com/auth/authorization.html)
+- [OpenFGA documentation](https://openfga.dev/docs)
+- [NIST SP 800-92: Guide to Computer Security Log Management](https://csrc.nist.gov/pubs/sp/800/92/final)
+- [NIST SP 800-53 Rev. 5, Audit and Accountability controls](https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final)
+- [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)
+- [NIST AI RMF Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
 
 ---
 

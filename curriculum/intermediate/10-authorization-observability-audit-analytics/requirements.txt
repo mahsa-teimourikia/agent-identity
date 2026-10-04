@@ -6,3 +6,5 @@ opentelemetry-sdk>=1.27
 cryptography>=42
 pydantic>=2.7
 rich>=13.7
+jsonschema>=4.23
+pytest>=8.3

@@ -1,24 +1,72 @@
 [
   {
-    "decision_id": "d-1",
-    "agent_id": "claims-agent",
     "action": "claim.read",
-    "resource_type": "claim",
-    "decision": "allow",
-    "reason": "ALLOW_TASK_SCOPE",
-    "risk": "medium",
-    "policy_version": "v19",
-    "latency_ms": 12
+    "actor": {
+      "agent_id": "agent:claims",
+      "delegation_id": "del:483",
+      "principal_pseudonym": "psn:61e22dc662c47292def8f7da",
+      "task_id": "task:483",
+      "tenant_id": "tenant:northstar",
+      "workload_id": "spiffe://northstar.example/prod/claims"
+    },
+    "attempt": 1,
+    "decision": {"outcome": "allow", "reason_code": "ALLOW_TASK_SCOPE", "risk_tier": "R2"},
+    "decision_id": "decision:1",
+    "emitted_by": "service:authorization-pdp",
+    "event_type": "authorization.decision",
+    "latency_ms": 12,
+    "observed_at": 1800100001,
+    "operation_id": "op:1",
+    "policy": {
+      "authorization_model_id": "authz-model:01KOBSERVE",
+      "determining_policy_ids": ["policy:claims-task"],
+      "evaluation_error_codes": [],
+      "policy_version": "policy:v21",
+      "relationship_data_version": "relationships:913"
+    },
+    "producer_sequence": 1,
+    "request_digest": "c9e0c3e0745fa50dcd3d2d1b3d7b1fb5fdd447b667174fb3dad93350a2bf3124",
+    "request_id": "request:1",
+    "resource": {"classification": "confidential", "resource_pseudonym": "psn:116423da95ca99ed58b57bb6", "resource_type": "claim", "version": 7},
+    "schema_version": "1.0.0",
+    "span_id": "00f067aa0ba902b7",
+    "timestamp": 1800100000,
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "valid_until": 1800100060
   },
   {
-    "decision_id": "d-2",
-    "agent_id": "claims-agent",
-    "action": "claim.delete",
-    "resource_type": "claim",
-    "decision": "deny",
-    "reason": "DENY_TASK_SCOPE",
-    "risk": "critical",
-    "policy_version": "v19",
-    "latency_ms": 14
+    "action": "claim.read",
+    "actor": {
+      "agent_id": "agent:claims",
+      "delegation_id": "del:483",
+      "principal_pseudonym": "psn:61e22dc662c47292def8f7da",
+      "task_id": "task:483",
+      "tenant_id": "tenant:northstar",
+      "workload_id": "spiffe://northstar.example/prod/claims"
+    },
+    "attempt": 1,
+    "decision": {"outcome": "deny", "reason_code": "DENY_POLICY_EVALUATION_ERROR", "risk_tier": "R2"},
+    "decision_id": "decision:policy-error",
+    "emitted_by": "service:authorization-pdp",
+    "event_type": "authorization.decision",
+    "latency_ms": 12,
+    "observed_at": 1800100001,
+    "operation_id": "op:policy-error",
+    "policy": {
+      "authorization_model_id": "authz-model:01KOBSERVE",
+      "determining_policy_ids": [],
+      "evaluation_error_codes": ["policy:entity-attribute-missing"],
+      "policy_version": "policy:v21",
+      "relationship_data_version": "relationships:913"
+    },
+    "producer_sequence": 2,
+    "request_digest": "e0d7c699a11c2dbb516077ff837c6a3fe574d6a554999e86a34514fc0c8c7eca",
+    "request_id": "request:policy-error",
+    "resource": {"classification": "confidential", "resource_pseudonym": "psn:116423da95ca99ed58b57bb6", "resource_type": "claim", "version": 7},
+    "schema_version": "1.0.0",
+    "span_id": "0000000000000002",
+    "timestamp": 1800100000,
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "valid_until": 1800100060
   }
 ]

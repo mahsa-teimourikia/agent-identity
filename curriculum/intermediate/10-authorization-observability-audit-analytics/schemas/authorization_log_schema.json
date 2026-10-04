@@ -1,71 +1,81 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Agent Authorization Decision Event",
+  "$id": "https://northstar.example/schemas/authorization-decision-event-v1.json",
+  "title": "Privacy-minimized agent authorization decision event",
   "type": "object",
-  "required": [
-    "schema_version",
-    "event_type",
-    "decision_id",
-    "timestamp",
-    "principal",
-    "agent",
-    "action",
-    "resource",
-    "policy",
-    "decision"
-  ],
+  "additionalProperties": false,
+  "required": ["schema_version", "event_type", "decision_id", "timestamp", "observed_at", "valid_until", "producer_sequence", "trace_id", "span_id", "request_id", "operation_id", "attempt", "action", "request_digest", "actor", "resource", "policy", "decision", "latency_ms", "emitted_by"],
   "properties": {
-    "schema_version": {
-      "type": "string"
-    },
-    "event_type": {
-      "const": "authorization.decision"
-    },
-    "decision_id": {
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "principal": {
-      "type": "object"
-    },
-    "agent": {
-      "type": "object"
-    },
-    "workload": {
-      "type": "object"
-    },
-    "delegation": {
-      "type": "object"
-    },
-    "task": {
-      "type": "object"
-    },
-    "action": {
-      "type": "object"
+    "schema_version": {"const": "1.0.0"},
+    "event_type": {"const": "authorization.decision"},
+    "decision_id": {"type": "string", "pattern": "^decision:[A-Za-z0-9._-]+$"},
+    "timestamp": {"$ref": "#/$defs/timestamp"},
+    "observed_at": {"$ref": "#/$defs/timestamp"},
+    "valid_until": {"$ref": "#/$defs/timestamp"},
+    "producer_sequence": {"type": "integer", "minimum": 1},
+    "trace_id": {"type": "string", "pattern": "^(?!0{32}$)[0-9a-f]{32}$"},
+    "span_id": {"type": "string", "pattern": "^(?!0{16}$)[0-9a-f]{16}$"},
+    "request_id": {"type": "string", "pattern": "^request:[A-Za-z0-9._-]+$"},
+    "operation_id": {"type": "string", "pattern": "^op:[A-Za-z0-9._-]+$"},
+    "attempt": {"type": "integer", "minimum": 1},
+    "action": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_-]*$"},
+    "request_digest": {"$ref": "#/$defs/sha256"},
+    "actor": {"$ref": "#/$defs/actor"},
+    "resource": {"$ref": "#/$defs/resource"},
+    "policy": {"$ref": "#/$defs/policy"},
+    "decision": {"$ref": "#/$defs/decision"},
+    "latency_ms": {"type": "integer", "minimum": 0, "maximum": 60000},
+    "emitted_by": {"const": "service:authorization-pdp"}
+  },
+  "$defs": {
+    "timestamp": {"type": "integer", "minimum": 0},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "pseudonym": {"type": "string", "pattern": "^psn:[0-9a-f]{24}$"},
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principal_pseudonym", "agent_id", "workload_id", "task_id", "delegation_id", "tenant_id"],
+      "properties": {
+        "principal_pseudonym": {"$ref": "#/$defs/pseudonym"},
+        "agent_id": {"type": "string", "pattern": "^agent:"},
+        "workload_id": {"type": "string", "pattern": "^spiffe://"},
+        "task_id": {"type": "string", "pattern": "^task:"},
+        "delegation_id": {"type": "string", "pattern": "^del:"},
+        "tenant_id": {"type": "string", "pattern": "^tenant:"}
+      }
     },
     "resource": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_type", "resource_pseudonym", "classification", "version"],
+      "properties": {
+        "resource_type": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+        "resource_pseudonym": {"$ref": "#/$defs/pseudonym"},
+        "classification": {"enum": ["internal", "confidential", "restricted"]},
+        "version": {"type": "integer", "minimum": 1}
+      }
     },
     "policy": {
-      "type": "object"
-    },
-    "assurance": {
-      "type": "object"
-    },
-    "risk": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "authorization_model_id", "relationship_data_version", "determining_policy_ids", "evaluation_error_codes"],
+      "properties": {
+        "policy_version": {"type": "string", "pattern": "^policy:"},
+        "authorization_model_id": {"type": "string", "pattern": "^authz-model:"},
+        "relationship_data_version": {"type": "string", "pattern": "^relationships:"},
+        "determining_policy_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^policy:"}},
+        "evaluation_error_codes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+      }
     },
     "decision": {
-      "type": "object"
-    },
-    "enforcement": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "reason_code", "risk_tier"],
+      "properties": {
+        "outcome": {"enum": ["allow", "deny"]},
+        "reason_code": {"type": "string", "pattern": "^(ALLOW|DENY)_[A-Z0-9_]+$"},
+        "risk_tier": {"enum": ["R1", "R2", "R3", "R4"]}
+      }
     }
   }
 }
