@@ -1,50 +1,66 @@
 {
-  "tokens": [
+  "scenario": "Northstar claims agent",
+  "oracle": "deny with the exact expected reason and produce no unauthorized effect",
+  "cases": [
     {
-      "name": "wrong_audience",
-      "sub": "agent:claims",
-      "iss": "https://id.example",
-      "aud": "api://analytics",
-      "expected": "DENY"
+      "attack_id": "token-wrong-audience",
+      "category": "token",
+      "mutation": "aud=https://evil.example",
+      "expected_reason": "TOKEN_INVALID"
     },
     {
-      "name": "expired",
-      "sub": "agent:claims",
-      "iss": "https://id.example",
-      "aud": "api://claims",
-      "expired": true,
-      "expected": "DENY"
-    }
-  ],
-  "delegations": [
-    {
-      "name": "scope_escalation",
-      "parent": [
-        "claim.read"
-      ],
-      "child": [
-        "claim.read",
-        "claim.delete"
-      ],
-      "expected": "DENY"
+      "attack_id": "token-expired",
+      "category": "token",
+      "mutation": "exp < now",
+      "expected_reason": "TOKEN_TIME_INVALID"
     },
     {
-      "name": "depth_abuse",
-      "max_depth": 1,
-      "chain": [
-        "user:alice",
-        "agent:a",
-        "agent:b"
-      ],
-      "expected": "DENY"
-    }
-  ],
-  "resources": [
+      "attack_id": "actor-substitution",
+      "category": "identity",
+      "mutation": "request.agent_id differs from token act.sub",
+      "expected_reason": "TOKEN_ACTOR_MISMATCH"
+    },
     {
-      "name": "cross_tenant",
-      "principal_tenant": "acme",
-      "resource_tenant": "evil",
-      "expected": "DENY"
+      "attack_id": "workload-substitution",
+      "category": "identity",
+      "mutation": "request.workload_id differs from verified token workload",
+      "expected_reason": "TOKEN_WORKLOAD_MISMATCH"
+    },
+    {
+      "attack_id": "cross-tenant",
+      "category": "resource",
+      "mutation": "resource tenant differs from requester tenant",
+      "expected_reason": "CROSS_TENANT_RESOURCE"
+    },
+    {
+      "attack_id": "idor",
+      "category": "resource",
+      "mutation": "resource ID is outside delegated resources",
+      "expected_reason": "DELEGATION_SCOPE_DENIED"
+    },
+    {
+      "attack_id": "scope-escalation",
+      "category": "delegation",
+      "mutation": "action is absent from token scope",
+      "expected_reason": "TOKEN_SCOPE_DENIED"
+    },
+    {
+      "attack_id": "tool-substitution",
+      "category": "tool",
+      "mutation": "MCP server ID changes after discovery",
+      "expected_reason": "TOOL_BINDING_MISMATCH"
+    },
+    {
+      "attack_id": "schema-substitution",
+      "category": "tool",
+      "mutation": "tool input-schema hash changes after approval",
+      "expected_reason": "TOOL_BINDING_MISMATCH"
+    },
+    {
+      "attack_id": "task-substitution",
+      "category": "delegation",
+      "mutation": "request task differs from token and delegation task",
+      "expected_reason": "TOKEN_TASK_MISMATCH"
     }
   ]
 }

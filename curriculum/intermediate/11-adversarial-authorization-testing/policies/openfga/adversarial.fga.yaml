@@ -5,7 +5,14 @@ tuples:
   - user: agent:claims
     relation: member
     object: tenant:acme
+  - user: agent:attacker
+    relation: member
+    object: tenant:evil
   - user: agent:claims
+    relation: reader
+    object: claim:483
+  # Deliberately assigned as reader: tenant intersection must still deny it.
+  - user: agent:attacker
     relation: reader
     object: claim:483
   - user: tenant:acme
@@ -22,7 +29,21 @@ tests:
 
   - name: unrelated agent cannot read claim
     check:
+      - user: agent:unknown
+        object: claim:483
+        assertions:
+          can_read: false
+
+  - name: direct reader tuple cannot cross tenant boundary
+    check:
       - user: agent:attacker
         object: claim:483
+        assertions:
+          can_read: false
+
+  - name: unknown claim defaults to deny
+    check:
+      - user: agent:claims
+        object: claim:999
         assertions:
           can_read: false
