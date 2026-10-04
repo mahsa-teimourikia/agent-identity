@@ -1,8 +1,69 @@
 # Intermediate 12 — Integrating Authorization with LLMs, Agents & Guardrails
 
-![Integrating Authorization with LLMs, Agents & Guardrails](images/integrating-authorization-agents-guardrails.png)
-
 > **Goal:** make authorization a mandatory execution boundary around agent actions—not a suggestion embedded in a prompt.
+
+| Course facts | Value |
+|---|---|
+| Level | Intermediate |
+| Estimated time | 4–6 hours |
+| Last reviewed | 2026-10-04 |
+| Prerequisites | Python, JSON, basic OAuth, Courses 8–11 |
+| Credentials | None; every exercise is local and synthetic |
+
+## Start here
+
+From this directory:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python lab.py
+pytest -q tests
+```
+
+The release gate passes only when all valid scenarios execute, no invalid
+scenario executes, every expected terminal state matches, and no forbidden
+effect occurs. The notebook is the guided lab; `lab.py` is the reusable source
+of truth; `tests/` is the adversarial contract.
+
+## Success criteria
+
+By the end, you should be able to explain and demonstrate why:
+
+1. framework guardrails, human approval, and authorization solve different problems;
+2. trusted identity never comes from model output;
+3. authorization runs at discovery, invocation, and immediately before commit;
+4. approvals bind to the exact proposal and are consumed atomically;
+5. retries reconcile by operation ID instead of repeating an uncertain side effect;
+6. tool results are untrusted until their schema is validated;
+7. MCP server identity, token audience, and downstream tokens are separate controls.
+
+## Scope and non-goals
+
+The lab teaches application-boundary design, not production identity issuance.
+Its signing keys, users, claims, payments, and policy data are deterministic
+fixtures. Do not reuse them. Production systems must use a managed key service,
+real authentication, durable transactional storage, service-side enforcement,
+and monitored policy distribution.
+
+## State of practice and tool choices
+
+| Layer | Course implementation | Production choices | What it does not replace |
+|---|---|---|---|
+| Typed boundary | Pydantic v2 | Pydantic, JSON Schema, protobuf | Authentication or policy |
+| Agent runtime | OpenAI Agents SDK adapter | Agents SDK, LangChain, custom runtimes | Resource authorization |
+| Durable graph | LangGraph `StateGraph` | LangGraph checkpointers, workflow engines | Idempotency design |
+| Protocol boundary | Local MCP-style adapter | Current MCP SDKs and OAuth resource metadata | Business authorization |
+| Contextual policy | OPA/Rego | OPA, Cedar, cloud IAM, application ABAC | Relationship truth |
+| Relationship policy | OpenFGA model | OpenFGA and other ReBAC systems | Dynamic risk decisions |
+| Approval | Signed, exact, single-use receipt | Workflow/approval service plus KMS/HSM | Authorization |
+| Evidence | Minimal structured records | Append-only audit and observability pipeline | Application logs alone |
+
+The tested dependency line for this revision is OpenAI Agents SDK 0.22,
+LangGraph 1.2, LangChain 1.3, Pydantic 2.13, and OPA 1.x. Framework APIs
+change quickly: use the pinned course ranges and check the linked primary
+documentation before deploying.
 
 The core design principle is simple:
 
@@ -547,6 +608,11 @@ Tool guardrails run around custom function-tool invocations.
 
 Important architectural nuance: agent-level input/output guardrails do not automatically become universal checks around every internal agent or handoff. Put security controls at the actual execution boundary.
 
+In the current SDK, input guardrails apply to the first agent, output
+guardrails apply to the final agent, and tool guardrails apply to the function
+tools to which they are attached. These lifecycle boundaries are why the lab's
+application-owned authorization runtime remains independent of the framework.
+
 ---
 
 # 22. OpenAI Agents SDK human approval
@@ -740,7 +806,7 @@ SecurityContext(
     agent_id="claims-agent",
     workload_id="spiffe://...",
     task_id="task:483",
-    delegation_id="del:483"
+    delegation_id="del:483",
 )
 ```
 
@@ -916,7 +982,10 @@ An MCP server remains a security boundary.
 
 # 39. MCP authorization: current direction
 
-The November 2025 MCP specification defines HTTP authorization around OAuth 2.1-era mechanisms.
+The 2025-11-25 MCP specification is the stable baseline used by this course.
+MCP continues to evolve, so production teams should distinguish stable
+requirements from release-candidate features and record the protocol version
+they validate against.
 
 Important requirements include:
 
@@ -930,7 +999,9 @@ secure redirect handling
 scope minimization
 ```
 
-Implement against the current MCP specification rather than older blog examples.
+Implement against the current stable specification rather than older blog
+examples, and re-run interoperability and security tests before adopting a
+newer revision.
 
 ---
 
@@ -1131,6 +1202,11 @@ Human-in-the-loop graph patterns can pause before sensitive execution.
 Persist enough state to resume safely, but revalidate security-sensitive context after a long pause.
 
 Do not persist raw credentials into checkpoint state.
+
+An interrupted node can be invoked again when a graph resumes. Keep side
+effects in idempotent nodes, persist an operation identifier, and reconcile an
+unknown result before retrying. A durable checkpointer preserves workflow
+state; it does not make external side effects exactly-once.
 
 ---
 
@@ -1487,47 +1563,29 @@ raw user token forwarded everywhere
 
 # 68. Practical notebook
 
-The notebook implements:
+The notebook walks through one coherent Northstar Insurance incident-response
+scenario. You will compare an insecure prompt-only baseline with the secure
+runtime; reject identity embedded in model output; separate content guardrails
+from policy; execute valid claim operations; pause and resume an exact signed
+payment approval; detect parameter tampering, approval replay, resource races,
+revocation, policy outage, invalid tool output, and unknown delivery outcomes;
+inspect minimal evidence; invoke the compiled LangGraph; inspect real OpenAI
+Agents SDK function-tool schemas without an API call; enforce the MCP boundary;
+and compare the included OPA, Cedar, and OpenFGA artifacts.
 
-1. security context;
-2. structured agent intent;
-3. intent normalization;
-4. simulated PDP;
-5. policy decision contract;
-6. tool filtering;
-7. resource-level authorization;
-8. constraints and obligations;
-9. parameter binding;
-10. risk scoring;
-11. HITL decision;
-12. approval digest;
-13. approval expiry;
-14. dynamic re-authorization;
-15. safe replanning;
-16. guardrail vs authorization examples;
-17. RAG/document authorization;
-18. memory authorization;
-19. multi-agent attenuation;
-20. handoff authorization;
-21. MCP server/tool authorization;
-22. token audience checks;
-23. token-passthrough prevention;
-24. task authorization;
-25. OPA policy example;
-26. Cedar policy example;
-27. OpenFGA model example;
-28. LangGraph secure graph pattern;
-29. OpenAI Agents SDK function-tool pattern;
-30. OpenAI Agents SDK HITL pattern;
-31. OpenAI Agents SDK MCP pattern;
-32. authorization evidence;
-33. bypass tests;
-34. prompt-injection tests;
-35. parameter-tampering tests;
-36. cross-tenant tests;
-37. stale-approval tests;
-38. policy-outage tests;
-39. secure execution-loop capstone.
+### Artifact map
+
+| Artifact | Purpose | Validation |
+|---|---|---|
+| `lab.py` | Deterministic secure execution runtime and evaluation | `python lab.py` |
+| `integrating_authorization_with_agents.ipynb` | Guided, executed practical lab | notebook validator |
+| `tests/test_agent_authorization_runtime.py` | 46 adversarial and integration checks | `pytest -q tests` |
+| `policies/opa/` | Executable Rego policy and 11 policy tests | `opa test policies/opa -v` |
+| `policies/cedar/` | Executed Cedar default-deny/forbid policy | CedarPy integration tests |
+| `policies/openfga/` | OpenFGA tenant-intersection model and 5 checks | `fga model test --tests ...` |
+| `agents_sdk/secure_tools.py` | Strict function-tool schemas and approval pause | imported by tests |
+| `langgraph/secure_agent_graph.py` | Compiled conditional execution graph | imported by tests |
+| `mcp/mock_server.py` | Server/audience/passthrough enforcement | imported by tests |
 
 ---
 
@@ -1616,34 +1674,25 @@ The notebook implements:
 
 # References
 
-- OpenAI Agents SDK — Python  
-  https://openai.github.io/openai-agents-python/
-- OpenAI Agents SDK — Guardrails  
-  https://openai.github.io/openai-agents-python/guardrails/
-- OpenAI Agents SDK — Human in the Loop  
-  https://openai.github.io/openai-agents-python/human_in_the_loop/
-- OpenAI Agents SDK — MCP  
-  https://openai.github.io/openai-agents-python/mcp/
-- LangGraph / LangChain Documentation  
-  https://docs.langchain.com/
-- Model Context Protocol — Specification 2025-11-25  
-  https://modelcontextprotocol.io/specification/2025-11-25
-- Model Context Protocol — Authorization  
-  https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
-- Model Context Protocol — Tasks  
-  https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks
-- Open Policy Agent  
-  https://www.openpolicyagent.org/
-- Cedar Policy  
-  https://docs.cedarpolicy.com/
-- OpenFGA  
-  https://openfga.dev/docs
-- OWASP GenAI — Excessive Agency  
-  https://genai.owasp.org/llmrisk/llm062025-excessive-agency/
-- OAuth 2.0 Resource Indicators — RFC 8707  
-  https://www.rfc-editor.org/rfc/rfc8707
-- OAuth 2.0 Protected Resource Metadata — RFC 9728  
-  https://www.rfc-editor.org/rfc/rfc9728
+- [OpenAI — Guardrails and approvals](https://developers.openai.com/api/docs/guides/agents/guardrails-approvals)
+- [OpenAI Agents SDK — Python](https://openai.github.io/openai-agents-python/)
+- [OpenAI Agents SDK — Guardrails](https://openai.github.io/openai-agents-python/guardrails/)
+- [OpenAI Agents SDK — Human in the loop](https://openai.github.io/openai-agents-python/human_in_the_loop/)
+- [OpenAI Agents SDK — MCP](https://openai.github.io/openai-agents-python/mcp/)
+- [LangGraph — Thinking in LangGraph](https://docs.langchain.com/oss/javascript/langgraph/thinking-in-langgraph)
+- [Model Context Protocol — Specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
+- [Model Context Protocol — Authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+- [Model Context Protocol — Tasks](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)
+- [Model Context Protocol — First anniversary and stable release](https://blog.modelcontextprotocol.io/posts/2025-11-25-first-mcp-anniversary/)
+- [Open Policy Agent — Integration](https://www.openpolicyagent.org/docs/integration)
+- [Open Policy Agent — Policy testing](https://www.openpolicyagent.org/docs/policy-testing)
+- [Open Policy Agent — Decision logs](https://www.openpolicyagent.org/docs/management-decision-logs)
+- [Cedar — Authorization semantics](https://docs.cedarpolicy.com/auth/authorization.html)
+- [Cedar — Policy validation](https://docs.cedarpolicy.com/policies/validation.html)
+- [OpenFGA — Modeling](https://openfga.dev/docs/modeling)
+- [OWASP GenAI — Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)
+- [RFC 8707 — OAuth 2.0 Resource Indicators](https://www.rfc-editor.org/rfc/rfc8707)
+- [RFC 9728 — OAuth 2.0 Protected Resource Metadata](https://www.rfc-editor.org/rfc/rfc9728)
 
 ---
 
