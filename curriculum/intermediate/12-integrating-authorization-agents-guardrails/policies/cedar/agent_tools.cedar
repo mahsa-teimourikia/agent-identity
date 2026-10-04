@@ -1,4 +1,4 @@
-// Illustrative Cedar policy for agent tool/resource authorization.
+// Cedar demonstrates default deny plus an explicit forbid override.
 
 permit (
     principal is Agent,
@@ -7,6 +7,11 @@ permit (
 )
 when {
     principal.tenant == resource.tenant &&
+    principal.workload == context.expectedWorkload &&
+    principal.task == context.taskId &&
+    context.toolName == "claims.get" &&
+    context.toolServer == "mcp://claims-prod" &&
+    context.policyVersion == "agent-tools/2026-10-04" &&
     context.workloadApproved &&
     context.delegationActive
 };
@@ -18,6 +23,11 @@ permit (
 )
 when {
     principal.tenant == resource.tenant &&
+    principal.workload == context.expectedWorkload &&
+    principal.task == context.taskId &&
+    context.toolName == "claims.update" &&
+    context.toolServer == "mcp://claims-prod" &&
+    context.policyVersion == "agent-tools/2026-10-04" &&
     context.workloadApproved &&
     context.delegationActive &&
     context.taskResource == resource.id
@@ -30,5 +40,6 @@ forbid (
 )
 when {
     !context.workloadApproved ||
-    !context.delegationActive
+    !context.delegationActive ||
+    context.requestTenant != principal.tenant
 };

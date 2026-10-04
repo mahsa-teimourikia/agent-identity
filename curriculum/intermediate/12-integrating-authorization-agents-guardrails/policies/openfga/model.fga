@@ -10,16 +10,26 @@ type tenant
 type agent
   relations
     define operator: [user]
-    define delegate: [agent]
+    define tenant: [tenant]
+
+type task
+  relations
+    define assignee: [agent]
+    define tenant: [tenant]
 
 type claim
   relations
+    define tenant: [tenant]
+    define task: [task]
     define reader: [user, agent]
     define editor: [user, agent]
-    define can_read: reader or editor
-    define can_update: editor
+    define tenant_member: member from tenant
+    define can_read: (reader or editor) and tenant_member
+    define can_update: editor and tenant_member
 
 type tool
   relations
     define invoker: [agent]
-    define can_invoke: invoker
+    define tenant: [tenant]
+    define tenant_member: member from tenant
+    define can_invoke: invoker and tenant_member

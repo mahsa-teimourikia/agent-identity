@@ -1,0 +1,64 @@
+name: Agent tool relationship tests
+model_file: ./model.fga
+
+tuples:
+  - user: agent:claims
+    relation: member
+    object: tenant:northstar
+  - user: agent:attacker
+    relation: member
+    object: tenant:evil
+  - user: tenant:northstar
+    relation: tenant
+    object: claim:483
+  - user: agent:claims
+    relation: editor
+    object: claim:483
+  - user: agent:attacker
+    relation: reader
+    object: claim:483
+  - user: tenant:northstar
+    relation: tenant
+    object: tool:claims-update
+  - user: agent:claims
+    relation: invoker
+    object: tool:claims-update
+  - user: agent:attacker
+    relation: invoker
+    object: tool:claims-update
+
+tests:
+  - name: tenant member and editor can update assigned claim
+    check:
+      - user: agent:claims
+        object: claim:483
+        assertions:
+          can_update: true
+
+  - name: direct reader tuple cannot cross tenant boundary
+    check:
+      - user: agent:attacker
+        object: claim:483
+        assertions:
+          can_read: false
+
+  - name: tenant member and invoker can invoke tool
+    check:
+      - user: agent:claims
+        object: tool:claims-update
+        assertions:
+          can_invoke: true
+
+  - name: invoker tuple cannot cross tenant boundary
+    check:
+      - user: agent:attacker
+        object: tool:claims-update
+        assertions:
+          can_invoke: false
+
+  - name: unknown relationship defaults to deny
+    check:
+      - user: agent:unknown
+        object: claim:483
+        assertions:
+          can_read: false
