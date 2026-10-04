@@ -1,0 +1,7 @@
+{
+  "capstone": {
+    "trusted_issuer": "https://id.northstar.example",
+    "gateway_audience": "https://agent-gateway.northstar.example",
+    "policy_version": "capstone/2026-10-04"
+  }
+}
