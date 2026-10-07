@@ -1,0 +1,49 @@
+{
+  "": {
+    "entityTypes": {
+      "Agent": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {"tenantId": {"type": "String", "required": true}},
+          "additionalAttributes": false
+        }
+      },
+      "Claim": {
+        "memberOfTypes": [],
+        "shape": {
+          "type": "Record",
+          "attributes": {"tenantId": {"type": "String", "required": true}},
+          "additionalAttributes": false
+        }
+      }
+    },
+    "commonTypes": {
+      "AuthorizationContext": {
+        "type": "Record",
+        "attributes": {
+          "authenticated": {"type": "Boolean", "required": true},
+          "workloadTrusted": {"type": "Boolean", "required": true},
+          "roleEligible": {"type": "Boolean", "required": true},
+          "policyVersionCurrent": {"type": "Boolean", "required": true},
+          "tenantMatch": {"type": "Boolean", "required": true},
+          "relationshipBinding": {"type": "Boolean", "required": true},
+          "taskValid": {"type": "Boolean", "required": true},
+          "stateCurrent": {"type": "Boolean", "required": true},
+          "riskScore": {"type": "Long", "required": true},
+          "updateContextTrusted": {"type": "Boolean", "required": true},
+          "claimOpen": {"type": "Boolean", "required": true},
+          "settlementApproved": {"type": "Boolean", "required": true},
+          "amountValid": {"type": "Boolean", "required": true},
+          "approvalValid": {"type": "Boolean", "required": true}
+        },
+        "additionalAttributes": false
+      }
+    },
+    "actions": {
+      "ReadClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "AuthorizationContext"}}},
+      "UpdateClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "AuthorizationContext"}}},
+      "SettleClaim": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "AuthorizationContext"}}}
+    }
+  }
+}
