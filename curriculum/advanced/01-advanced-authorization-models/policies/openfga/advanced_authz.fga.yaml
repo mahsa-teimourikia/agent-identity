@@ -1,0 +1,103 @@
+name: Advanced hybrid authorization relationship tests
+model_file: ./model.fga
+
+tuples:
+  - user: agent:claims
+    relation: member
+    object: tenant:northstar
+  - user: agent:attacker
+    relation: member
+    object: tenant:contoso
+  - user: user:alice
+    relation: operator
+    object: agent:claims
+  - user: tenant:northstar
+    relation: tenant
+    object: task:claim-483
+  - user: agent:claims
+    relation: assignee
+    object: task:claim-483
+    condition:
+      name: non_expired_grant
+      context:
+        grant_time: "2026-10-07T16:00:00Z"
+        grant_duration: 1h
+  - user: tenant:northstar
+    relation: tenant
+    object: claim:483
+  - user: task:claim-483
+    relation: task
+    object: claim:483
+  - user: agent:claims
+    relation: reader
+    object: claim:483
+  - user: agent:claims
+    relation: updater
+    object: claim:483
+  - user: agent:claims
+    relation: settler
+    object: claim:483
+  - user: agent:attacker
+    relation: reader
+    object: claim:483
+  - user: tenant:northstar
+    relation: tenant
+    object: tool:claims-update
+  - user: agent:claims
+    relation: invoker
+    object: tool:claims-update
+
+tests:
+  - name: verified user operates the claims agent
+    check:
+      - user: user:alice
+        object: agent:claims
+        assertions:
+          operator: true
+  - name: assigned tenant agent can read update and settle
+    check:
+      - user: agent:claims
+        object: claim:483
+        context:
+          current_time: "2026-10-07T16:30:00Z"
+        assertions:
+          can_read: true
+          can_update: true
+          can_settle: true
+  - name: cross tenant direct reader remains denied
+    check:
+      - user: agent:attacker
+        object: claim:483
+        context:
+          current_time: "2026-10-07T16:30:00Z"
+        assertions:
+          can_read: false
+  - name: unknown unassigned agent is denied
+    check:
+      - user: agent:unknown
+        object: claim:483
+        context:
+          current_time: "2026-10-07T16:30:00Z"
+        assertions:
+          can_read: false
+          can_update: false
+  - name: expired task assignment no longer authorizes claim access
+    check:
+      - user: agent:claims
+        object: claim:483
+        context:
+          current_time: "2026-10-07T17:00:01Z"
+        assertions:
+          can_read: false
+  - name: tenant member with invoker relation can invoke tool
+    check:
+      - user: agent:claims
+        object: tool:claims-update
+        assertions:
+          can_invoke: true
+  - name: unknown agent cannot invoke tool
+    check:
+      - user: agent:unknown
+        object: tool:claims-update
+        assertions:
+          can_invoke: false

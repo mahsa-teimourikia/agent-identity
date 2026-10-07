@@ -3,29 +3,39 @@ model
 
 type user
 
+type tenant
+  relations
+    define member: [user, agent]
+
 type agent
   relations
     define operator: [user]
-    define task: [task]
 
 type task
   relations
-    define principal: [user]
-    define assigned_agent: [agent]
-    define can_read_claim: [claim]
-    define can_update_claim: [claim]
-    define can_call: [tool]
-
-type claim
-  relations
-    define assignee: [user]
-    define reader: [user, agent]
-    define editor: [user, agent]
-    define can_read: reader or editor
-    define can_update: editor
+    define tenant: [tenant]
+    define assignee: [agent with non_expired_grant]
 
 type tool
   relations
-    define calling_agent: [agent]
-    define permitted_task: [task]
-    define can_call: permitted_task and task from calling_agent
+    define tenant: [tenant]
+    define invoker: [agent]
+    define tenant_member: member from tenant
+    define can_invoke: invoker and tenant_member
+
+type claim
+  relations
+    define tenant: [tenant]
+    define task: [task]
+    define reader: [agent]
+    define updater: [agent]
+    define settler: [agent]
+    define tenant_member: member from tenant
+    define task_assignee: assignee from task
+    define can_read: reader and tenant_member and task_assignee
+    define can_update: updater and tenant_member and task_assignee
+    define can_settle: settler and tenant_member and task_assignee
+
+condition non_expired_grant(current_time: timestamp, grant_time: timestamp, grant_duration: duration) {
+  current_time < grant_time + grant_duration
+}
