@@ -1,18 +1,45 @@
 {
-  "receiver": "agent-control-plane",
-  "trusted_transmitters": [
-    "https://id.example",
-    "https://security.example",
-    "https://workload.example"
-  ],
-  "delivery": "push",
+  "stream_id": "northstar-agent-control-plane",
+  "spec_version": "1_0",
+  "audience": "https://signals.northstar.example/ssf",
+  "delivery_method": "urn:ietf:rfc:8935",
+  "durable_before_ack": true,
   "deduplicate_by": "jti",
-  "subject_keys": [
-    "agent_id",
-    "session_id",
-    "workload_id",
-    "tenant_id"
-  ],
-  "critical_event_behavior": "fail_closed",
-  "private_event_namespace": "https://security.example/events/agent/"
+  "max_set_age_seconds": 300,
+  "max_event_age_seconds": 3600,
+  "future_skew_seconds": 30,
+  "max_pending_events": 100,
+  "subject_profile": {
+    "format": "complex",
+    "required_components": ["tenant", "agent", "workload", "session"]
+  },
+  "failure_policy": {
+    "sensitive_write_on_stream_outage": "pause",
+    "sensitive_write_on_projection_backlog": "pause",
+    "stale_relaxation": "ignore",
+    "late_restriction": "apply",
+    "recovery": "governance_evidence_and_cooldown"
+  },
+  "trusted_transmitters": [
+    {
+      "issuer": "https://id.northstar.example",
+      "kid": "id-2026",
+      "authority": "session, credential, assurance, device, and identity-risk CAEP events"
+    },
+    {
+      "issuer": "https://security.northstar.example",
+      "kid": "security-2026",
+      "authority": "agent behavior, threat, transaction risk, and quarantine events"
+    },
+    {
+      "issuer": "https://workload.northstar.example",
+      "kid": "workload-2026",
+      "authority": "workload posture events"
+    },
+    {
+      "issuer": "https://governance.northstar.example",
+      "kid": "governance-2026",
+      "authority": "task, relationship, policy, and recovery events"
+    }
+  ]
 }

@@ -1,1156 +1,673 @@
-# Advanced 05 — Continuous & Adaptive Trust for Autonomous Agents
+# Continuous and Adaptive Trust for Autonomous Agents
 
-![Continuous & Adaptive Trust for Autonomous Agents](images/continuous-adaptive-trust.png)
+**Level:** Advanced
 
-> **Goal:** move agent authorization from a one-time decision to a continuously re-evaluated control loop that can reduce, step up, revoke, or quarantine authority when identity, workload, behavior, environment, or business risk changes.
+**Estimated time:** 5–7 hours
 
-A credential can be valid while the world around it has changed.
+**Format:** chapter, executed notebook, reusable Python lab, signed event fixtures, policy examples, and adversarial tests
 
-```text
-09:00  agent authenticates
-09:02  authorization succeeds
-09:17  workload becomes non-compliant
-09:19  unusual tool sequence detected
-09:20  security service raises risk
-09:21  agent still has an unexpired token
-```
+**Last reviewed:** 2026-10-12
 
-If the architecture trusts only the original token, the system has a blind spot.
+> **Goal:** keep an agent's authority synchronized with current identity, workload, behavior, threat, transaction, and governance state—including while a long-running operation is already in progress.
 
-The desired model is:
+A claims-adjustment agent has a valid session and permission to update
+`claim:483`. Minutes later, its session is revoked, the workload becomes
+noncompliant, a threat detector raises risk, or the task assignment ends. A
+point-in-time gateway continues to trust the old allow. The adaptive control
+plane in this course consumes authenticated signals, projects current state,
+and reauthorizes immediately before the business effect.
 
 ```text
-Request
-   ↓
-Initial Policy Decision
-   ↓
-Execution
-   ↓
-Continuous Signals
-   ↓
-Risk / Trust State
-   ↓
-Re-evaluate
-   ↓
-ALLOW | REDUCE | STEP-UP | REVOKE | QUARANTINE
-   ↓
-Enforce + Record
-   ↺
+identity / security / workload / governance transmitters
+                         |
+                signed Security Event Tokens
+                         |
+        authenticate -> validate -> persist -> HTTP 202
+                         |
+              ordered, tenant-scoped projection
+                         |
+     current state + multidimensional risk + stream health
+                         |
+  ALLOW / OBSERVE / REDUCE / STEP_UP / PAUSE / REVOKE / QUARANTINE
+                         |
+              commit-time reauthorization + evidence
 ```
 
-The central principle is:
+The lab is deterministic, offline, and credential-free. It uses real Ed25519
+JWS signatures and standards-shaped SET claims, but it is not a conformant SSF
+server. For teaching clarity, it requires one event and an `event_timestamp`
+per SET, uses fixed keys and time, and models delivery in-process. Production
+deployments need protected key discovery, OAuth-protected stream management,
+TLS, receiver authentication, durable infrastructure, and conformance testing.
 
-> **Trust is a changing state, not a login-time fact.**
+## Learning outcomes
 
----
+After this course, you can:
 
-# Learning outcomes
+1. distinguish continuous authentication, continuous authorization, risk
+   adaptation, and token revocation;
+2. explain the roles of SSF, CAEP, RISC, SET, subject identifiers, and push or
+   poll delivery;
+3. validate a signed SET before acknowledging it and separate durable receipt
+   from asynchronous projection;
+4. correlate a signal to the exact tenant, agent, workload, and session without
+   accepting ambiguous identifiers;
+5. handle duplicates, late delivery, stale relaxation, backlog, stream outage,
+   and recovery without reopening access unsafely;
+6. combine identity, workload, behavior, threat, transaction, and governance
+   state without treating a scalar score as authority;
+7. implement proportional actions, negative-evidence precedence, hysteresis,
+   cooldown, and explicit recovery evidence;
+8. bind short decision leases to intent and current state, and reauthorize at
+   side-effect boundaries;
+9. produce privacy-aware decision evidence and evaluate a control against a
+   labelled adversarial corpus; and
+10. map the teaching runtime to common event, policy, cache, telemetry, and
+    identity tooling.
 
-You will learn to:
+## Prerequisites
 
-- distinguish continuous authentication, continuous access evaluation, continuous authorization, and runtime monitoring;
-- apply Zero Trust principles to autonomous agents;
-- understand OpenID Shared Signals Framework (SSF) 1.0;
-- understand CAEP 1.0 and Security Event Tokens;
-- model transmitters, receivers, streams, subjects, events, and delivery;
-- process session-revoked, token-claims-change, credential-change, assurance-level-change, device-compliance-change, session-established, session-presented, and risk-level-change events;
-- translate human/device-oriented CAEP concepts into agent/workload controls carefully;
-- model agent-specific runtime signals without pretending they are standardized CAEP events;
-- build an explainable risk engine;
-- implement trust decay and signal freshness;
-- distinguish event time, receipt time, and decision time;
-- handle duplicates, replay, reordering, and stale events;
-- use hysteresis to prevent authorization flapping;
-- reduce privileges dynamically;
-- trigger step-up and human approval;
-- revoke sessions/capabilities;
-- quarantine agents;
-- integrate adaptive state with OPA and Cedar;
-- invalidate authorization caches;
-- handle long-running workflows and queued actions;
-- preserve privacy and data minimization;
-- test fail-open/fail-closed behavior;
-- design event-driven evidence and audit trails.
+- Advanced 04: attestations, credentials, status, and composite assurance;
+- OAuth/OIDC token validation and sender/resource binding;
+- policy enforcement points and fail-closed dependency behavior;
+- Python dataclasses, JSON, SQLite, and basic JWS concepts.
 
----
+## Success criteria
 
-# 1. Why point-in-time trust fails
+You are finished when you can run:
 
-Traditional access often looks like:
-
-```text
-authenticate
-→ issue token
-→ trust until expiry
+```bash
+python3 -m pip install -r curriculum/advanced/05-continuous-adaptive-trust/requirements.txt
+python3 curriculum/advanced/05-continuous-adaptive-trust/lab.py
+pytest -q curriculum/advanced/05-continuous-adaptive-trust/tests/test_adaptive_runtime.py
 ```
 
-Autonomous agents create longer and more dynamic execution windows:
-
-```text
-plan
-→ call tool
-→ retrieve data
-→ delegate
-→ wait
-→ resume
-→ call another tool
-→ perform write
-```
-
-Risk can change between any two steps.
-
----
-
-# 2. Zero Trust for agents
-
-NIST SP 800-207 frames Zero Trust around protecting resources rather than assuming trust because of network location.
-
-For agents, translate this into:
-
-```text
-no implicit trust from deployment location
-no permanent trust from prior success
-verify identity and authority
-evaluate resource/action context
-continuously incorporate relevant state
-enforce least privilege
-```
-
-Zero Trust is not "calculate one trust score."
-
----
-
-# 3. Continuous authentication vs authorization
-
-These are related but distinct.
-
-**Continuous authentication**
-
-```text
-Is this still the same authenticated principal/workload?
-```
-
-**Continuous access evaluation**
-
-```text
-Has security state changed such that existing access should change?
-```
-
-**Continuous authorization**
-
-```text
-Given the current identity, delegation, resource, environment, evidence, and risk:
-should this action be allowed now?
-```
-
----
-
-# 4. Shared Signals Framework
-
-OpenID Shared Signals Framework 1.0 standardizes how cooperating systems exchange security events.
-
-Roles:
-
-```text
-Transmitter
-   ↓ Security Event Tokens
-Event Stream
-   ↓
-Receiver
-   ↓
-Security action
-```
-
-SSF became an OpenID Final Specification in September 2025.
-
----
-
-# 5. Security Event Tokens
-
-SSF builds on the IETF Security Event Token (SET), RFC 8417.
-
-A SET is a JWT-like structure describing a security event from the issuer's perspective.
-
-Typical fields include:
-
-```text
-iss
-aud
-iat
-jti
-events
-subject identifier
-```
-
-A SET is not an OAuth access token.
-
----
-
-# 6. CAEP
-
-OpenID Continuous Access Evaluation Profile 1.0 defines event types for communicating changes that may require access attenuation.
-
-The Final Specification was approved in 2025.
-
-CAEP explicitly applies to shared:
-
-```text
-human users
-robotic users
-devices
-sessions
-applications
-```
-
-This makes it highly relevant to non-human/agent identities, while agent-specific semantics still require careful local modeling.
-
----
-
-# 7. CAEP event types
-
-CAEP 1.0 defines:
-
-```text
-session-revoked
-token-claims-change
-credential-change
-assurance-level-change
-device-compliance-change
-session-established
-session-presented
-risk-level-change
-```
-
-Do not invent custom events under the CAEP namespace.
-
-Agent-specific events can use enterprise/private event types under your own namespace.
-
----
-
-# 8. Agent event taxonomy
-
-Useful non-standard agent signals might include:
-
-```text
-agent-quarantined
-tool-anomaly
-delegation-anomaly
-release-withdrawn
-evaluation-failed
-policy-violation
-cross-tenant-attempt
-budget-anomaly
-human-override
-```
-
-Clearly label these as private/domain events.
-
----
-
-# 9. Signal sources
-
-A mature agent control plane combines several classes of signal.
-
-```text
-Identity
-├─ credential status
-├─ token/session state
-└─ role/relationship changes
-
-Workload
-├─ SPIFFE/SPIRE state
-├─ runtime posture
-├─ deployment/release
-└─ node/environment
-
-Behavior
-├─ tool sequences
-├─ action rate
-├─ data access patterns
-└─ delegation patterns
-
-Security
-├─ EDR/SIEM
-├─ threat intelligence
-├─ compromised key
-└─ incident state
-
-Business
-├─ transaction amount
-├─ claim/payment state
-├─ tenant sensitivity
-└─ human decision
-```
-
----
-
-# 10. Signals are evidence, not commands
-
-Bad design:
-
-```text
-anomaly detector says HIGH
-→ automatically trust detector's desired action
-```
-
-Better:
-
-```text
-verified signal
-→ normalized risk fact
-→ policy
-→ proportional action
-```
-
-The signal producer should not silently become the authorization authority.
-
----
-
-# 11. Signal trust
-
-Every signal has provenance:
-
-```text
-producer
-subject
-type
-timestamp
-confidence
-integrity/proof
-scope
-freshness
-```
-
-A forged risk signal can be a denial-of-service weapon.
-
-Authenticate transmitters and validate event integrity.
-
----
-
-# 12. Subject correlation
-
-The receiver must know which agent/session/workload an event affects.
-
-Agent identity may involve:
-
-```text
-logical agent ID
-workload SPIFFE ID
-session ID
-token ID
-deployment ID
-tenant
-task ID
-delegation ID
-```
-
-Correlation mistakes can revoke the wrong agent—or fail to revoke the right one.
-
----
-
-# 13. Event time vs receipt time
-
-Keep separate:
-
-```text
-event occurred at
-transmitter emitted at
-receiver received at
-policy evaluated at
-```
-
-This matters for delays, reordering, investigations, and stale events.
-
----
-
-# 14. Event freshness
-
-Example:
-
-```text
-risk = HIGH
-event timestamp = 40 minutes ago
-current state = LOW
-```
-
-Should the old HIGH event override current state?
-
-Not necessarily.
-
-Define per-signal freshness and ordering semantics.
-
----
-
-# 15. Replay and duplicates
-
-Event delivery can be at-least-once.
-
-Use identifiers such as `jti` and idempotent processing.
-
-```text
-same event twice
-≠
-double punishment
-```
-
-Maintain bounded replay/deduplication state.
-
----
-
-# 16. Out-of-order events
-
-Suppose:
-
-```text
-10:01 risk = HIGH
-10:02 risk = LOW
-```
-
-but LOW arrives first.
-
-Blind arrival-order processing can restore HIGH incorrectly.
-
-Track authoritative event timestamps/versioning where available.
-
----
-
-# 17. Signal normalization
-
-Different producers use different scales:
-
-```text
-LOW/MEDIUM/HIGH
-0..100
-0..1 probability
-PASS/FAIL
-NORMAL/ANOMALOUS
-```
-
-Normalize before policy.
-
-Keep original raw evidence for audit.
-
----
-
-# 18. Risk dimensions
-
-Avoid one unexplained number.
-
-Useful dimensions:
-
-```text
-identity_risk
-workload_risk
-behavior_risk
-data_risk
-transaction_risk
-delegation_risk
-threat_risk
-```
-
-Policy can respond differently to each.
-
----
-
-# 19. Risk aggregation
-
-A simple teaching model:
-
-```text
-overall =
-max(
- identity,
- workload,
- threat,
- weighted behavior,
- transaction
-)
-```
-
-Production aggregation should reflect business impact, confidence, correlation, and false-positive cost.
-
----
-
-# 20. Trust decay
-
-Old positive evidence should not remain maximally influential forever.
-
-Example:
-
-```text
-fresh workload attestation → strong
-2 hours later              → weaker
-after restart              → invalid
-```
-
-Decay can be:
-
-```text
-time-based
-event-based
-action-count-based
-transaction-bound
-```
-
----
-
-# 21. Negative evidence precedence
-
-A valid registration credential should not override:
-
-```text
-agent quarantined
-credential revoked
-workload compromised
-release withdrawn
-active incident
-```
-
-Critical negative evidence often needs explicit deny precedence.
-
----
-
-# 22. Adaptive decisions
-
-Instead of only ALLOW/DENY:
-
-```text
-ALLOW
-REDUCE
-STEP-UP
-REVOKE
-QUARANTINE
-OBSERVE
-```
-
-This produces safer and more usable systems.
-
----
-
-# 23. REDUCE
-
-Reduce can mean:
-
-```text
-remove write actions
-restrict datasets
-disable delegation
-lower transaction limit
-restrict tool set
-force read-only mode
-shorten credential lifetime
-```
-
-This is often preferable to total shutdown.
-
----
-
-# 24. STEP-UP
-
-Step-up can require:
-
-```text
-fresh workload attestation
-new credential
-stronger assurance
-human approval
-manager approval
-transaction confirmation
-additional policy evidence
-```
-
-For autonomous agents, "MFA" is not always the right abstraction. Step-up should match the principal and action.
-
----
-
-# 25. REVOKE
-
-Revocation can target:
-
-```text
-session
-access token
-capability
-delegation
-credential
-task authorization
-```
-
-Revocation scope matters.
-
-Do not revoke an entire agent fleet when one task/session is compromised unless policy requires it.
-
----
-
-# 26. QUARANTINE
-
-Quarantine isolates the agent while preserving investigation evidence.
-
-Possible effects:
-
-```text
-block sensitive tools
-disable delegation
-allow health/status endpoints
-retain telemetry
-freeze queued writes
-require human release
-```
-
----
-
-# 27. OBSERVE
-
-Sometimes risk is insufficient to change access but sufficient to increase telemetry.
-
-```text
-ALLOW + enhanced logging
-ALLOW + shorter re-evaluation interval
-ALLOW + shadow policy
-```
-
-This helps tune detection without over-blocking.
-
----
-
-# 28. Hysteresis
-
-Without hysteresis:
-
-```text
-49 → allow
-51 → reduce
-49 → allow
-51 → reduce
-```
-
-The system flaps.
-
-Use separate thresholds:
-
-```text
-enter REDUCE at >= 60
-return to ALLOW at < 40
-```
-
----
-
-# 29. Cooldown and recovery
-
-After quarantine, do not automatically restore full privileges because one low-risk signal arrives.
-
-Require recovery conditions:
-
-```text
-minimum cooldown
-fresh attestation
-incident cleared
-human release
-clean evaluation
-new credential
-```
-
----
-
-# 30. Long-running workflows
-
-An agent may have planned an action before risk changed.
-
-Before execution of a sensitive queued action:
-
-```text
-re-check authorization
-re-check delegation
-re-check risk
-re-check evidence freshness
-```
-
-Do not assume plan-time authorization remains valid.
-
----
-
-# 31. Authorization cache invalidation
-
-Continuous signals are useless if cached ALLOW decisions remain valid.
-
-Risk events should invalidate:
-
-```text
-decision cache
-session cache
-capability cache
-delegation cache
-tool authorization cache
-```
-
-as appropriate.
-
----
-
-# 32. Policy versioning
-
-Record which policy evaluated each event-driven decision.
-
-```text
-decision_id
-policy_version
-risk_model_version
-signal IDs
-previous decision
-new decision
-reason
-```
-
-This is essential for audit.
-
----
-
-# 33. Explainability
-
-A decision should say:
-
-```text
-REDUCE
-because:
-  workload compliance changed to non-compliant
-  signal = evt-812
-  received = ...
-  policy = adaptive-authz-v12
-effects:
-  remove claim.update
-  disable delegation
-```
-
-Avoid opaque "AI risk score says no."
-
----
-
-# 34. OPA integration
-
-OPA can consume normalized state:
+The hardened evaluator must match all 40 labelled cases with zero invalid
+allows and zero valid blocks. The intentionally unsafe point-in-time baseline
+accepts 35 invalid cases, so the security improvement is measurable rather
+than anecdotal.
+
+## Non-goals
+
+This course does not claim that:
+
+- every system must use one universal risk score;
+- CAEP defines business authorization policy;
+- receipt of an event proves its contents are authoritative;
+- revoking a token automatically reverses completed side effects;
+- all positive changes are safe to apply out of order; or
+- continuous evaluation means sending every raw telemetry record to a central
+  engine.
+
+## 1. Continuous trust is a state-synchronization problem
+
+An authorization decision is true only for a bounded instant and input set.
+For an agent, relevant inputs change independently:
+
+| Plane | Examples | Trusted owner |
+| --- | --- | --- |
+| identity | session, credential, token claims, assurance level | identity provider |
+| workload | SVID, attestation, device/runtime compliance, release | workload authority |
+| behavior | tool sequence, rate, destination, model-independent anomaly | security analytics |
+| threat | compromised key, malicious artifact, IOC match | threat/security service |
+| transaction | amount, destination, purpose, object state | business system |
+| governance | task, relationship, approval, policy version, quarantine | control plane |
+
+The agent and model are not trusted sources for these fields. A trusted adapter
+resolves them from authoritative systems. Signals update the verifier's view;
+the local policy still decides what the update means for a specific action.
+
+### Authentication, authorization, and adaptation
+
+- Continuous authentication asks whether identity/session assurance changed.
+- Continuous authorization asks whether the exact action is still permitted.
+- Adaptive enforcement selects a proportionate control when state changes.
+- Revocation ends a credential, session, delegation, or lease.
+- Quarantine isolates a principal or workload pending governed recovery.
+
+These controls compose, but they are not synonyms. A high-risk event might
+require stronger evidence for a read, pause a write, revoke a session, or
+quarantine a workload depending on the event authority and local policy.
+
+## 2. Standards stack
+
+### Security Event Tokens
+
+[RFC 8417](https://www.rfc-editor.org/rfc/rfc8417) defines a Security Event
+Token as a JWT whose `events` claim describes security events. A receiver still
+has to validate the JWS algorithm and key, issuer, audience, profile, time,
+identifier, event type, subject, and event-specific schema. Signature validity
+proves who signed the bytes; it does not give that issuer unlimited authority.
+
+A lab SET has this shape:
 
 ```json
 {
-  "principal": "agent:claims",
-  "action": "claim.update",
-  "risk": {
-    "level": "high",
-    "workload": "high"
+  "iss": "https://id.northstar.example",
+  "aud": "https://signals.northstar.example/ssf",
+  "iat": 1800000000,
+  "jti": "set:session-revoked",
+  "txn": "txn:claims:483",
+  "sub_id": {
+    "format": "complex",
+    "tenant": {"format": "opaque", "id": "tenant:northstar"},
+    "agent": {"format": "opaque", "id": "agent:claims-adjuster"},
+    "workload": {"format": "uri", "uri": "spiffe://northstar.example/claims/adjuster"},
+    "session": {"format": "opaque", "id": "session:claims:483"}
   },
-  "state": {
-    "quarantined": false
+  "events": {
+    "https://schemas.openid.net/secevent/caep/event-type/session-revoked": {
+      "event_timestamp": 1800000000
+    }
   }
 }
 ```
 
-Policy remains deterministic and reviewable.
+The JOSE header is `{"alg":"EdDSA","kid":"id-2026","typ":"secevent+jwt"}`.
+The receiver never trusts the decoded `iss` until it selects a configured
+issuer policy and verifies the signature under that issuer's allowed key.
 
----
+### Shared Signals Framework 1.0
 
-# 35. Cedar integration
+The OpenID Shared Signals Framework and CAEP became OpenID Final
+Specifications in August 2025. [SSF 1.0
+Final](https://openid.net/specs/openid-sharedsignals-framework-1_0-final.html)
+profiles SETs and defines transmitter metadata, event streams, stream
+management, subject handling, and delivery integration. It profiles:
 
-Cedar can use dynamic risk/context alongside principal-action-resource relationships.
+- [RFC 8935 push delivery](https://www.rfc-editor.org/rfc/rfc8935);
+- [RFC 8936 poll delivery](https://www.rfc-editor.org/rfc/rfc8936); and
+- [RFC 9493 subject identifiers](https://www.rfc-editor.org/rfc/rfc9493).
 
-Use `forbid` for high-priority negative state:
+SSF is the transport and stream-governance layer. It does not define an
+enterprise's final authorization decision.
 
-```text
-quarantined
-credential revoked
-release withdrawn
-```
+### CAEP 1.0
 
-Remember that changing context must actually trigger re-evaluation.
+[CAEP 1.0 Final](https://openid.net/specs/openid-caep-1_0-final.html) defines
+events used by cooperating transmitters and receivers to attenuate access for
+human or robotic users, devices, sessions, and applications. Its event set
+includes:
 
----
+- session revoked;
+- token claims change;
+- credential change;
+- assurance level change;
+- device compliance change;
+- session established and session presented; and
+- risk level change.
 
-# 36. ReBAC integration
+CAEP event payloads have specified semantics. Do not invent a similarly named
+field and call it interoperable CAEP. Agent-specific behavior, workload,
+transaction, task, and quarantine events in this lab use a private
+collision-resistant namespace and an explicit bilateral contract.
 
-Relationships can change continuously:
+### RISC and adjacent profiles
 
-```text
-owner removed
-task delegation revoked
-agent removed from project
-tenant relationship ended
-```
+[OpenID RISC 1.0
+Final](https://openid.net/specs/openid-risc-1_0-final.html)
+defines account-security events on the same framework. As of October 2026,
+[RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) adds a SCIM profile for SETs.
+These profiles are useful when workforce/account lifecycle or SCIM resource
+changes must feed the same control plane, but profile semantics must remain
+distinct.
 
-Continuous authorization should incorporate relationship changes, not only telemetry.
+## 3. Receiver pipeline: verify, persist, acknowledge, project
 
----
+For push delivery, the receiver's safe path is:
 
-# 37. Shared Signals receiver architecture
+1. enforce transport and receiver authentication outside the JWT;
+2. parse only enough untrusted data to select configured verification policy;
+3. require `typ=secevent+jwt` and an approved asymmetric algorithm/key;
+4. verify signature, issuer, audience, required claims, time, and freshness;
+5. validate the subject identifier and tenant mapping;
+6. require an event type authorized for that transmitter;
+7. validate the event payload;
+8. persist under a unique `jti` in a durable transaction;
+9. return HTTP 202 only after persistence; and
+10. project the event asynchronously and record projection latency.
 
-```text
-SSF Receiver
-   ↓
-SET verification
-   ↓
-subject correlation
-   ↓
-dedupe/order/freshness
-   ↓
-normalization
-   ↓
-risk state store
-   ↓
-policy re-evaluation
-   ↓
-PEP / revocation / quarantine
-```
+The acknowledgement means “durably accepted for processing,” not “the business
+state is already updated.” If the queue is full, the lab returns backpressure
+instead of dropping events or acknowledging work it cannot retain.
 
----
+### Duplicate delivery
 
-# 38. Push vs poll
+Delivery is at least once. `jti` is an idempotency key. The lab's SQLite unique
+constraint and lock ensure that 24 concurrent copies create one pending record;
+the others receive an idempotent 202 duplicate outcome.
 
-**Push**
+### Push versus poll
 
-```text
-fast reaction
-event-driven
-requires reliable delivery/security
-```
+| Property | Push (RFC 8935) | Poll (RFC 8936) |
+| --- | --- | --- |
+| delivery initiation | transmitter calls receiver | receiver calls transmitter |
+| inbound exposure | receiver endpoint required | no transmitter-initiated callback |
+| pressure control | receiver status/retry behavior | receiver poll rate and requested count |
+| outage recovery | transmitter retries | receiver resumes polling |
+| shared invariant | authenticate, validate, deduplicate, persist, project | authenticate, validate, deduplicate, persist, project |
 
-**Poll**
+Choose based on network boundaries and operations, not on a belief that one
+delivery mode changes event trust semantics.
 
-```text
-simpler for some sources
-higher latency
-wasted requests
-```
+## 4. Subject correlation and authority
 
-Use both where appropriate.
+RFC 9493 standardizes formats such as `iss_sub`, `opaque`, `uri`, `did`, and
+aliases. SSF also supports complex subjects. Format correctness says how an
+identifier is encoded; the receiver still needs an independently governed
+mapping to a local principal.
 
----
-
-# 39. Stream failure
-
-What happens when the signal stream is unavailable?
-
-Choose by risk:
-
-```text
-low-risk reads → bounded stale state may be acceptable
-sensitive writes → step-up or fail closed
-high-impact actions → require fresh state
-```
-
-Do not silently fail open forever.
-
----
-
-# 40. Backpressure
-
-A flood of events can overwhelm the receiver.
-
-Protect with:
+The lab intentionally requires all four components:
 
 ```text
-queues
-rate limits
-priority
-deduplication
-bounded storage
-circuit breakers
-per-transmitter quotas
+tenant + agent + workload + session
 ```
 
-Critical revocation events should not be buried behind low-value telemetry.
+Dropping tenant enables cross-tenant confusion. Dropping workload lets one
+runtime borrow another agent instance's state. Dropping session can revoke too
+broadly or too narrowly. Unknown components and extra fields fail closed rather
+than being silently ignored.
 
----
+Transmitter authority is scoped too:
 
-# 41. Signal poisoning
+| Source | Allowed authority |
+| --- | --- |
+| identity | CAEP session, credential, assurance, device, identity-risk events |
+| security | behavior, threat, transaction-risk, quarantine restriction |
+| workload | workload-posture events |
+| governance | task, relationship, policy, and governed recovery |
 
-Attack:
+A valid identity-provider signature on a task-change event is rejected because
+the identity provider is not the task authority.
+
+## 5. Ordering, freshness, and convergence
+
+`iat` describes the SET issuance time. CAEP's optional `event_timestamp`
+describes when the event occurred. Receipt time describes when the receiver
+saw it. They are different clocks.
+
+The lab keeps a high-water mark per subject and domain:
+
+- newer state normally replaces older state;
+- stale relaxations are ignored;
+- a late restriction is still applied;
+- duplicate `jti` values do not project twice; and
+- events in unrelated domains do not overwrite one another.
+
+This asymmetric merge rule prevents a delayed “low risk” event from erasing a
+newer “high risk” state and prevents a new benign update from hiding a late
+session revocation. Production systems need documented conflict rules for ties,
+source precedence, clock skew, tombstones, full-state snapshots, and replay
+after disaster recovery.
+
+### Stream health is authorization input
+
+Silence is ambiguous: nothing changed, or the signal path failed. Sensitive
+writes pause when:
+
+- the stream is unavailable;
+- the last successful contact exceeds the freshness budget;
+- restrictive events remain unprojected; or
+- required risk dimensions are missing or stale.
+
+Reads may use a separately approved degraded policy, but the exception must be
+explicit, time bounded, observable, and tested.
+
+## 6. Multidimensional risk without assurance laundering
+
+The lab keeps five independent dimensions:
 
 ```text
-attacker emits fake HIGH risk
-→ agent quarantined
+identity | workload | behavior | threat | transaction
 ```
 
-or:
+Its maximum-of-dimensions heuristic makes the exercise deterministic. It is not
+a universal trust score and must not be treated as one. Production policy should
+retain source, confidence, freshness, reason, and calibration metadata and use
+hard predicates for non-negotiable controls.
+
+Negative state has precedence:
 
 ```text
-attacker emits fake LOW risk
-→ privileges restored
+quarantine > revocation > workload/task/relationship invalidity
+           > signal health > risk adaptation > allow
 ```
 
-Defend with authenticated transmitters, integrity verification, issuer policy, event authorization, and precedence rules.
+Setting every risk dimension to zero cannot override a revoked session or
+quarantined workload.
 
----
+## 7. Adaptive actions
 
-# 42. Risk-score manipulation
+| Mode | Meaning in this scenario | Allowed effect |
+| --- | --- | --- |
+| `ALLOW` | current low-risk state and healthy signals | exact read or write |
+| `OBSERVE` | moderate risk on a read | read with enhanced evidence |
+| `REDUCE` | moderate risk on a write | no write; offer read-only path |
+| `STEP_UP` | high risk or changed token claims | require fresh independent evidence |
+| `PAUSE` | stale/unavailable/backlogged signal state | no sensitive effect |
+| `REVOKE` | session, credential, task, or relationship ended | end bounded authority |
+| `QUARANTINE` | critical threat or untrusted workload | isolate agent/workload |
+| `DENY` | request binding or policy mismatch | no effect |
 
-An autonomous agent may discover that certain actions lower or avoid a risk score.
+An adaptive action is enforceable only when a PEP can implement it. A policy
+must not return `read_only` or `isolate_agent` as decorative text that the caller
+can ignore.
 
-Do not expose unnecessary detector internals to the model.
+## 8. Hysteresis, cooldown, and recovery
 
-Use independent enforcement and adversarially test gaming behavior.
-
----
-
-# 43. Alert fatigue and overreaction
-
-If every anomaly causes quarantine, operators will bypass the system.
-
-Map confidence + impact to proportional actions:
+Escalation is immediate. Recovery is deliberately slower:
 
 ```text
-weak anomaly → observe
-moderate risk → reduce
-high risk → step-up
-critical compromise → quarantine/revoke
+authorized recovery = governance source
+                    + incident cleared
+                    + fresh workload attestation
+                    + human approval
+                    + cooldown elapsed
 ```
 
----
+This prevents threshold flapping and forged “all clear” events. Recovery is a
+new decision based on current evidence, not deletion of the incident record.
+The state machine retains the more restrictive mode until all conditions hold.
 
-# 44. Privacy
+## 9. Long-running agents and time-of-check/time-of-use
 
-Continuous evaluation can become surveillance.
-
-Collect only signals necessary for security and business decisions.
-
-Define:
+Agent work often crosses minutes, approvals, queues, or human review:
 
 ```text
-purpose
-retention
-access
-sharing
-minimization
-aggregation
-redaction
+plan -> fetch -> reason -> wait -> propose -> authorize -> side effect
 ```
 
-Do not feed all telemetry into model prompts.
+An allow at plan time cannot authorize the final effect. Reevaluate at:
 
----
+- tool invocation;
+- retrieval of a new sensitive object;
+- resumption after a wait or handoff;
+- approval consumption;
+- token or capability exchange; and
+- immediately before an irreversible business effect.
 
-# 45. Data separation
+`CommitGate` performs the final check under an operation lock. It binds retries
+to a digest of the exact request. An exact retry returns the recorded outcome;
+a changed request under the same operation ID is a conflict.
 
-Keep:
+## 10. Decision leases and cache safety
+
+A cache entry is a short lease over a complete decision context, not a reusable
+boolean. The lab binds a lease to:
+
+- canonical request digest;
+- projected state version;
+- signal-stream epoch; and
+- expiry.
+
+Any trusted state change, outage transition, request change, or timeout misses
+the cache. Production keys often also include policy/bundle version, resource
+version, relationship tuple version, delegation family, approval receipt, and
+workload attestation digest.
+
+## 11. Policy engines and event infrastructure
+
+The reference Python controller is the executable oracle. The repository also
+includes equivalent policy-shape examples for:
+
+- [Open Policy Agent](https://www.openpolicyagent.org/docs/latest/) using Rego;
+- [Cedar](https://docs.cedarpolicy.com/) with explicit `forbid` precedence.
+
+Relationship engines such as [OpenFGA](https://openfga.dev/docs) can resolve
+task, ownership, and delegation relationships, but contextual current state
+still belongs in an attribute-aware decision. Common production components
+include:
+
+| Concern | Common choices | Required invariant |
+| --- | --- | --- |
+| JWT/JWS validation | PyJWT, Authlib, jose libraries, platform SDKs | fixed algorithms, issuer/audience/key policy |
+| durable event transport | Kafka, Pulsar, NATS JetStream, cloud queues | at-least-once, partitioning, replay, backpressure |
+| projection/state | PostgreSQL, Redis, DynamoDB, stream processors | per-subject ordering and versioning |
+| policy | OPA, Cedar, OpenFGA plus contextual PDP, cloud IAM engines | semantic parity with reference decisions |
+| telemetry | OpenTelemetry, SIEM, metrics/log platforms | correlation without raw sensitive tokens |
+| key distribution | JWKS with governed metadata and rotation | issuer-bound trust, cache limits, rollback plan |
+
+Libraries implement mechanics. They do not choose trusted issuers, event
+authority, subject mapping, recovery policy, or fail-open behavior for you.
+
+## 12. Threat model
+
+The lab and tests cover:
+
+- forged signatures, unknown issuers, wrong audiences, keys, and token types;
+- stale/future SETs and malformed subjects;
+- cross-tenant subject substitution;
+- multi-event ambiguity and transmitter overreach;
+- duplicate delivery and concurrent replay;
+- event flood and receiver backpressure;
+- delayed relaxations and late restrictions;
+- point-in-time authorization after session, credential, workload, task,
+  relationship, claims, or policy changes;
+- risk-source staleness and missing dimensions;
+- stream outage and projection backlog;
+- forged or incomplete quarantine recovery;
+- cache reuse after a trusted state or stream epoch change;
+- queued effects after mid-flight revocation; and
+- changed-request idempotency conflicts.
+
+Signals can create denial of service as well as unauthorized access. Source
+authority, rate limits, circuit breakers, dead-letter handling, and operator
+recovery therefore belong in the security design.
+
+## 13. Privacy and evidence
+
+SETs can contain sensitive security and identity information. Follow RFC 8417's
+confidentiality guidance, minimize event payloads, constrain retention, encrypt
+at rest and in transit, and authorize access to raw events separately from
+decision evidence.
+
+The lab evidence record keeps:
+
+- operation ID;
+- a hash of tenant/agent/workload binding;
+- action and resource;
+- allow/mode/reason;
+- obligations;
+- state and policy versions; and
+- dimension values used by the decision.
+
+It does not store compact SETs or the plain agent identifier. In production,
+use a protected correlation service or keyed pseudonym when an unkeyed hash
+would permit dictionary correlation.
+
+## 14. Reliability and observability
+
+Useful SLOs and alerts include:
+
+- durable receipt latency and error rate;
+- receipt-to-projection and projection-to-enforcement latency;
+- oldest pending event age and backlog depth;
+- duplicate, invalid-signature, unauthorized-type, and malformed-subject rates;
+- transmitter/JWKS freshness and key-rotation health;
+- policy decision latency by mode/reason;
+- cache invalidation rate;
+- time to revoke, quarantine, and safely recover;
+- percentage of decisions made with stale or incomplete evidence; and
+- false-positive/false-negative outcomes from labelled review.
+
+Do not report “instant revocation” from an in-process demo. Measure each stage
+with event time, receive time, persist time, project time, decide time, and
+enforce time.
+
+## 15. Safe rollout
+
+1. inventory effects and classify their consequence;
+2. establish authoritative subjects, sources, schemas, and trust metadata;
+3. receive and persist in observe-only mode;
+4. compare proposed adaptive outcomes with current enforcement;
+5. label disagreements and tune per action/resource slice;
+6. enforce negative lifecycle events first;
+7. add step-up/reduce/pause modes with tested obligations;
+8. rehearse outages, replay, key rotation, backlog, and recovery;
+9. canary by tenant/workload; and
+10. promote only when the zero-invalid-allow release gate passes.
+
+Shadow mode must not leak proposed decisions back to the agent as a way to game
+detectors. Detector internals stay outside model context; the agent receives
+only the enforceable result and appropriate user-safe explanation.
+
+## 16. Evaluation
+
+The labelled corpus contains 40 cases:
+
+- 3 expected allowed;
+- 37 expected blocked;
+- lifecycle, workload, governance, negative-state, risk, binding, authority,
+  identity, resilience, ordering, recovery, freshness, and correlation slices.
+
+The hardened path must achieve:
 
 ```text
-raw security telemetry
-normalized risk state
-model context
-audit evidence
+invalid allows = 0
+valid blocks   = 0
+accuracy       = 1.0
 ```
 
-as separate security domains.
+The point-in-time baseline checks only action and resource. It accepts 35
+invalid cases. This is not a production benchmark; it is a deterministic
+regression gate that makes the missing controls visible.
 
-The LLM usually needs the **decision/effect**, not raw sensitive telemetry.
+## 17. Lab map
 
----
+| Artifact | Purpose |
+| --- | --- |
+| `lab.py` | signed SETs, durable receiver, projection, controller, cache, commit gate, evaluation |
+| `advanced_adaptive_runtime.py` | collision-safe import facade |
+| `advanced_05_continuous_adaptive_trust.ipynb` | guided incident and experiments |
+| `configs/shared-signals/receiver.json` | receiver and fail-safe operating contract |
+| `data/adversarial_cases.json` | labelled 40-case corpus |
+| `policies/opa/adaptive_authz.rego` | normalized Rego policy shape |
+| `policies/cedar/adaptive_authz.cedar` | Cedar permit/forbid shape |
+| `tests/test_adaptive_runtime.py` | protocol, concurrency, policy, recovery, cache, and TOCTOU tests |
 
-# 46. Event-driven revocation latency
+Run the lab:
 
-Measure:
+```bash
+python3 curriculum/advanced/05-continuous-adaptive-trust/lab.py
+```
+
+Expected summary:
 
 ```text
-event occurrence
-→ event emitted
-→ event received
-→ policy recomputed
-→ PEP enforced
+hardened: 40/40 matches, 0 invalid allows, release gate true
+point-in-time baseline: 35 invalid allows
 ```
 
-This is the real continuous-access response time.
+## 18. Production upgrade path
 
----
+Replace training shortcuts before production:
 
-# 47. SLOs
+1. discover SSF metadata over authenticated, policy-controlled channels;
+2. validate HTTPS issuer and endpoint rules and bind cached JWKS to issuer;
+3. protect stream management and delivery endpoints with suitable OAuth/mTLS;
+4. implement RFC 8935 or RFC 8936 fully, including normative error behavior;
+5. use durable replicated storage, partitioning, retry, and dead-letter policy;
+6. formalize schemas for every private event and version them compatibly;
+7. add key rotation, compromise response, replay windows, and trust rollback;
+8. validate OPA/Cedar/OpenFGA semantic parity against labelled decisions;
+9. integrate PEP obligations with actual tool and business-system controls;
+10. run OpenID SSF conformance tests and ecosystem interoperability tests.
 
-Example operational objectives:
+## 19. State of the art in October 2026
 
-```text
-critical revocation p95 enforcement < 10 s
-quarantine propagation p95 < 15 s
-risk-state freshness < 60 s
-event loss = 0 for critical classes
-duplicate processing safe = 100%
-```
+### Established
 
-Choose numbers based on system risk and architecture.
+- SSF 1.0, CAEP 1.0, and RISC 1.0 are OpenID Final Specifications published
+  on 29 August 2025 and approved as final in September 2025;
+- SET, push delivery, poll delivery, and subject identifiers are standardized
+  in RFC 8417, RFC 8935, RFC 8936, and RFC 9493;
+- OpenID provides SSF transmitter conformance testing for metadata, stream
+  management, stream verification, and push/poll delivery;
+- NIST Zero Trust places continual evaluation and least privilege in a wider
+  enterprise architecture.
 
----
+### Emerging
 
-# 48. Shadow mode
+- the CAEP interoperability profile remains an Implementer's Draft/workgroup
+  deliverable rather than a Final Specification;
+- RFC 9967's SCIM SET profile, published in 2026, extends standardized event
+  integration for identity lifecycle changes;
+- agent-specific behavior, tool-risk, workload, task, and transaction events
+  still require governed private schemas or future standard profiles;
+- cross-vendor semantics, subject mapping, recovery, and measurable end-to-end
+  enforcement latency remain harder than token transport alone.
 
-Before activating adaptive controls:
+### Open problems
 
-```text
-compute decision
-do not enforce
-compare against operator outcome
-measure false positives
-tune thresholds/policy
-```
+- calibration drift and adversarial gaming of behavior models;
+- safe recovery after compromised signal authorities;
+- privacy-preserving cross-domain correlation;
+- causal ordering across independent transmitters;
+- partial failure and regional partition policy; and
+- proving that every business side effect passed a fresh decision.
 
-Shadow mode is valuable for rollout.
+## 20. Exercises
 
----
+### Beginner
 
-# 49. Simulation
+1. Add a signed device-compliance event and explain its resulting mode.
+2. Compare the decoded SET with the receiver's normalized state.
+3. Change a SET audience and observe the exact rejection reason.
 
-Build deterministic event simulations:
+### Intermediate
 
-```text
-normal operation
-credential revoked
-workload non-compliant
-risk spike
-risk recovery
-event duplication
-event delay
-event reordering
-stream outage
-signal poisoning
-```
+1. Add a poll-delivery fixture while preserving durable deduplication.
+2. Add a dead-letter state for payloads that verify but cannot project.
+3. Implement a separately approved degraded-read policy for stream outage.
 
-Adaptive authorization needs state-machine tests, not only unit tests.
+### Advanced
 
----
+1. Replace SQLite with a partitioned event log and projection checkpoint.
+2. Add key rotation with overlapping issuer-bound JWKS generations.
+3. Model two transmitters updating one domain and specify deterministic source
+   precedence and tie behavior.
+4. Add a conformance-inspired push endpoint with normative error payloads.
 
-# 50. Enterprise reference architecture
+### Enterprise
 
-```text
-Identity / IdP ───────┐
-Workload / SPIRE ─────┤
-SIEM / EDR ───────────┤
-Evaluation ───────────┤
-Governance ───────────┤
-Business Systems ─────┤
-Behavior Analytics ───┘
-          │
-          ▼
- Shared Signals / Event Bus
-          │
-          ▼
- Signal Verification Gateway
-          │
-          ▼
- State + Risk Engine
-          │
-          ├────────► Evidence Store
-          │
-          ▼
- Adaptive PDP
- OPA / Cedar / ReBAC
-          │
-          ▼
- PEP / Agent Gateway
- ├─ allow
- ├─ reduce
- ├─ step-up
- ├─ revoke
- └─ quarantine
-          │
-          ▼
- Agent / MCP / API / Tool
-          │
-          └────────────── telemetry/events ↺
-```
+1. Define SLOs and a rollback plan for one real sensitive agent effect.
+2. Build a shadow evaluation report sliced by tenant, action, and reason.
+3. Rehearse transmitter compromise, stream outage, backlog, and false-positive
+   quarantine recovery.
+4. Prove policy parity across the reference controller and your deployed PDP.
 
----
+## 21. Review questions
 
-# 51. Production checklist
+1. Why must a receiver persist a valid SET before returning HTTP 202?
+2. Why is a signed event not automatically authoritative for every event type?
+3. How do `iat`, `event_timestamp`, and receipt time differ?
+4. Why should a late restriction be treated differently from a stale
+   relaxation?
+5. Which exact fields must a safe decision lease bind?
+6. Why is commit-time reauthorization required for long-running agents?
+7. What evidence should be required before leaving quarantine?
+8. How can stream silence create a false sense of low risk?
 
-Before calling a system "continuous trust," verify:
+## Primary references
 
-```text
-Are signals authenticated?
-Are event subjects correlated correctly?
-Are events deduplicated?
-Can events arrive out of order safely?
-Is freshness modeled?
-Can negative evidence override positive evidence?
-Are decisions proportional?
-Can privileges be reduced without full shutdown?
-Can sessions/capabilities/delegations be revoked?
-Can agents be quarantined?
-Are queued sensitive actions re-authorized?
-Are cached ALLOWs invalidated?
-Is stream failure handled explicitly?
-Can attackers poison signals?
-Can the model manipulate the risk engine?
-Are recovery rules defined?
-Are privacy/retention controls defined?
-Can every transition be explained?
-Is enforcement latency measured?
-```
+- OpenID Foundation, [Shared Signals Framework 1.0 Final](https://openid.net/specs/openid-sharedsignals-framework-1_0-final.html)
+- OpenID Foundation, [Continuous Access Evaluation Profile 1.0 Final](https://openid.net/specs/openid-caep-1_0-final.html)
+- OpenID Foundation, [RISC Profile 1.0 Final](https://openid.net/specs/openid-risc-1_0-final.html)
+- OpenID Foundation, [Shared Signals specifications and status](https://openid.net/wg/sharedsignals/specifications/)
+- OpenID Foundation, [SSF conformance testing](https://openid.net/certification/ssf_testing/)
+- IETF, [RFC 8417: Security Event Token](https://www.rfc-editor.org/rfc/rfc8417)
+- IETF, [RFC 8935: Push-Based SET Delivery](https://www.rfc-editor.org/rfc/rfc8935)
+- IETF, [RFC 8936: Poll-Based SET Delivery](https://www.rfc-editor.org/rfc/rfc8936)
+- IETF, [RFC 9493: Subject Identifiers for SETs](https://www.rfc-editor.org/rfc/rfc9493)
+- IETF, [RFC 9967: SCIM Profile for SETs](https://www.rfc-editor.org/rfc/rfc9967)
+- NIST, [SP 800-207: Zero Trust Architecture](https://csrc.nist.gov/pubs/sp/800/207/final)
+- NIST, [SP 800-207A: Cloud-Native Zero Trust](https://csrc.nist.gov/pubs/sp/800/207/a/final)
+- Open Policy Agent, [documentation](https://www.openpolicyagent.org/docs/latest/)
+- Cedar, [policy language documentation](https://docs.cedarpolicy.com/)
+- OpenFGA, [documentation](https://openfga.dev/docs)
 
----
+## Next course
 
-# Practical notebook
-
-The notebook implements:
-
-1. continuous-trust state;
-2. event model;
-3. SET-like security events;
-4. CAEP event taxonomy;
-5. private agent event taxonomy;
-6. transmitter trust;
-7. event integrity;
-8. subject correlation;
-9. duplicate detection;
-10. replay handling;
-11. out-of-order events;
-12. freshness;
-13. signal normalization;
-14. multidimensional risk;
-15. aggregation;
-16. trust decay;
-17. negative evidence precedence;
-18. ALLOW/REDUCE/STEP-UP/REVOKE/QUARANTINE;
-19. hysteresis;
-20. recovery/cooldown;
-21. dynamic tool reduction;
-22. delegation disablement;
-23. transaction limits;
-24. long-running action re-authorization;
-25. decision-cache invalidation;
-26. OPA-style policy;
-27. Cedar-style forbid precedence;
-28. ReBAC relationship changes;
-29. stream failure;
-30. signal poisoning;
-31. risk gaming;
-32. privacy/minimization;
-33. event-driven audit evidence;
-34. enforcement latency;
-35. shadow mode;
-36. deterministic simulation;
-37. adversarial matrix;
-38. end-to-end autonomous-agent incident.
-
----
-
-# References
-
-- OpenID Shared Signals Framework 1.0 Final  
-  https://openid.net/specs/openid-sharedsignals-framework-1_0-final.html
-- OpenID Continuous Access Evaluation Profile 1.0 Final  
-  https://openid.net/specs/openid-caep-1_0-final.html
-- OpenID RISC Profile 1.0 Final  
-  https://openid.net/specs/openid-risc-1_0-final.html
-- OpenID Shared Signals Working Group  
-  https://openid.net/wg/sharedsignals/
-- RFC 8417 — Security Event Token  
-  https://www.rfc-editor.org/rfc/rfc8417
-- NIST SP 800-207 — Zero Trust Architecture  
-  https://csrc.nist.gov/pubs/sp/800/207/final
-- SPIFFE  
-  https://spiffe.io/
-- Open Policy Agent  
-  https://www.openpolicyagent.org/
-- Cedar  
-  https://www.cedarpolicy.com/
-
----
-
-# Next course
-
-## Advanced 06 — Decentralized Identity & Trust for Multi-Agent Ecosystems
-
-The next module explores identity and trust when there is no single enterprise identity authority: decentralized identifiers, DID resolution, trust registries, peer-to-peer agent identity, portable credentials, key rotation/recovery, trust establishment, Sybil resistance, reputation limitations, and multi-agent ecosystem governance.
+Advanced 06 covers decentralized identity and trust for multi-agent ecosystems:
+DID resolution, portable credentials, trust registries, key recovery,
+cross-domain governance, Sybil resistance, and the limits of reputation.
