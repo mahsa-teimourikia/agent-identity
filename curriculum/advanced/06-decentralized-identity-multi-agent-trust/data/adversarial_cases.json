@@ -1,58 +1,44 @@
 [
-  {
-    "case": "did_document_substitution",
-    "expected": "deny"
-  },
-  {
-    "case": "untrusted_did_method",
-    "expected": "deny"
-  },
-  {
-    "case": "wrong_verification_relationship",
-    "expected": "deny"
-  },
-  {
-    "case": "malicious_service_endpoint",
-    "expected": "block"
-  },
-  {
-    "case": "stale_pre_rotation_document",
-    "expected": "refresh_or_deny"
-  },
-  {
-    "case": "deactivated_did",
-    "expected": "deny"
-  },
-  {
-    "case": "self_asserted_enterprise_approval",
-    "expected": "ignore"
-  },
-  {
-    "case": "untrusted_credential_issuer",
-    "expected": "deny"
-  },
-  {
-    "case": "sybil_flood",
-    "expected": "no_trust_from_identifier_count"
-  },
-  {
-    "case": "reputation_collusion",
-    "expected": "insufficient_for_high_risk"
-  },
-  {
-    "case": "delegation_escalation",
-    "expected": "deny"
-  },
-  {
-    "case": "trust_transitivity_assumption",
-    "expected": "deny"
-  },
-  {
-    "case": "resolver_compromise",
-    "expected": "detect_or_fail_safe"
-  },
-  {
-    "case": "method_downgrade",
-    "expected": "deny"
-  }
+  {"case_id":"valid-worker-read","category":"valid","expected_allowed":true,"threat":"all proofs and local state valid"},
+  {"case_id":"valid-lower-assurance","category":"valid","expected_allowed":true,"threat":"single trusted resolver for a lower-assurance route"},
+  {"case_id":"auth-forged-signature","category":"authentication","expected_allowed":false,"threat":"attacker signs with an unbound key"},
+  {"case_id":"auth-wrong-kid","category":"authentication","expected_allowed":false,"threat":"unknown verification method"},
+  {"case_id":"auth-key-not-authentication","category":"authentication","expected_allowed":false,"threat":"valid key lacks authentication relationship"},
+  {"case_id":"auth-wrong-nonce","category":"authentication","expected_allowed":false,"threat":"challenge substitution"},
+  {"case_id":"auth-wrong-audience","category":"authentication","expected_allowed":false,"threat":"cross-verifier replay"},
+  {"case_id":"auth-wrong-domain","category":"authentication","expected_allowed":false,"threat":"domain confusion"},
+  {"case_id":"auth-expired","category":"authentication","expected_allowed":false,"threat":"expired controller proof"},
+  {"case_id":"auth-replay","category":"authentication","expected_allowed":false,"threat":"reused proof identifier"},
+  {"case_id":"auth-subject-substitution","category":"authentication","expected_allowed":false,"threat":"issuer and subject differ"},
+  {"case_id":"resolution-unsupported-method","category":"resolution","expected_allowed":false,"threat":"method outside local policy"},
+  {"case_id":"resolution-document-substitution","category":"resolution","expected_allowed":false,"threat":"resolved document id differs"},
+  {"case_id":"resolution-deactivated","category":"resolution","expected_allowed":false,"threat":"deactivated controller"},
+  {"case_id":"resolution-private-jwk","category":"resolution","expected_allowed":false,"threat":"private key leaked in public DID document"},
+  {"case_id":"resolution-unsafe-service","category":"resolution","expected_allowed":false,"threat":"service endpoint targets metadata network"},
+  {"case_id":"resolution-stale-after-rotation","category":"resolution","expected_allowed":false,"threat":"cached pre-rotation key"},
+  {"case_id":"resolution-quorum-disagreement","category":"resolution","expected_allowed":false,"threat":"high-assurance resolvers disagree"},
+  {"case_id":"resolution-method-downgrade","category":"resolution","expected_allowed":false,"threat":"request bypasses method policy"},
+  {"case_id":"registration-untrusted-issuer","category":"credential","expected_allowed":false,"threat":"forged governance credential"},
+  {"case_id":"registration-wrong-subject","category":"credential","expected_allowed":false,"threat":"credential bound to another agent"},
+  {"case_id":"registration-untrusted-org","category":"credential","expected_allowed":false,"threat":"self-asserted organization"},
+  {"case_id":"registration-wrong-class","category":"credential","expected_allowed":false,"threat":"unapproved agent class"},
+  {"case_id":"registration-expired","category":"credential","expected_allowed":false,"threat":"expired registration"},
+  {"case_id":"registration-revoked","category":"credential","expected_allowed":false,"threat":"locally revoked registration"},
+  {"case_id":"registration-inactive","category":"credential","expected_allowed":false,"threat":"suspended registration subject"},
+  {"case_id":"capability-wrong-root","category":"delegation","expected_allowed":false,"threat":"chain begins outside configured root"},
+  {"case_id":"capability-wrong-delegate","category":"delegation","expected_allowed":false,"threat":"final delegate differs from caller"},
+  {"case_id":"capability-action-amplification","category":"delegation","expected_allowed":false,"threat":"child invents an action"},
+  {"case_id":"capability-resource-amplification","category":"delegation","expected_allowed":false,"threat":"child invents a resource"},
+  {"case_id":"capability-purpose-change","category":"delegation","expected_allowed":false,"threat":"child changes purpose"},
+  {"case_id":"capability-tenant-change","category":"delegation","expected_allowed":false,"threat":"child crosses tenant boundary"},
+  {"case_id":"capability-audience-change","category":"delegation","expected_allowed":false,"threat":"capability replayed to another verifier"},
+  {"case_id":"capability-lifetime-amplification","category":"delegation","expected_allowed":false,"threat":"child outlives parent"},
+  {"case_id":"capability-parent-mismatch","category":"delegation","expected_allowed":false,"threat":"chain splicing"},
+  {"case_id":"capability-revoked","category":"delegation","expected_allowed":false,"threat":"revoked leaf capability"},
+  {"case_id":"organization-suspended","category":"policy","expected_allowed":false,"threat":"current organization state is suspended"},
+  {"case_id":"agent-quarantined","category":"policy","expected_allowed":false,"threat":"current agent state is quarantined"},
+  {"case_id":"relationship-ended","category":"policy","expected_allowed":false,"threat":"employment or sponsorship ended"},
+  {"case_id":"request-action-not-delegated","category":"request","expected_allowed":false,"threat":"requested action exceeds grant"},
+  {"case_id":"request-resource-not-delegated","category":"request","expected_allowed":false,"threat":"requested object exceeds grant"},
+  {"case_id":"request-tenant-not-delegated","category":"request","expected_allowed":false,"threat":"request crosses tenant boundary"}
 ]

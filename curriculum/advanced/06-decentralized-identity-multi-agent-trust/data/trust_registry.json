@@ -1,25 +1,20 @@
 {
-  "organizations": {
-    "did:web:corp.example": {
-      "status": "trusted",
-      "credential_types": [
-        "AgentRegistrationCredential"
-      ]
-    },
-    "did:web:partner.example": {
-      "status": "trusted",
-      "credential_types": [
-        "PartnerAgentCredential"
-      ]
-    },
-    "did:web:unknown.example": {
-      "status": "untrusted",
-      "credential_types": []
-    }
-  },
-  "allowed_did_methods": [
-    "web",
-    "key"
+  "policyVersion": "decentralized-trust-2026-10-12",
+  "registrationIssuer": "did:web:governance.northstar.example",
+  "capabilityRoot": "did:web:agents.northstar.example:claims",
+  "trustedOrganizations": ["did:web:partner.example"],
+  "allowedAgentClasses": ["claims-investigator"],
+  "allowedDidMethods": ["web", "key"],
+  "allowedResolverHosts": [
+    "agents.northstar.example",
+    "agents.partner.example",
+    "partner.example",
+    "governance.northstar.example",
+    "verifier.northstar.example"
   ],
-  "policy_version": "trust-registry-v3"
+  "highAssuranceRequiresResolverQuorum": true,
+  "maxDelegationDepth": 3,
+  "credentialStatusMode": "fail-closed",
+  "revokedCredentials": [],
+  "revokedCapabilities": []
 }
