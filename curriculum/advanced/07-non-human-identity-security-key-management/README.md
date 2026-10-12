@@ -1,7 +1,5 @@
 # Advanced 07 — Non-Human Identity Security & Key Management for Agents
 
-![Non-Human Identity Security & Key Management](images/non-human-identity-security.png)
-
 > **Goal:** secure the operational identity substrate underneath autonomous agents: workload identity, machine credentials, keys, certificates, tokens, secretless federation, rotation, isolation, monitoring, and incident response.
 
 Agent identity is not secure because an agent has a unique ID.
@@ -64,6 +62,30 @@ You will learn to:
 - detect credential theft and replay;
 - respond to compromise;
 - manage identity at fleet scale.
+
+---
+
+# Run the executable course
+
+```bash
+python3 -m pip install -r curriculum/advanced/07-non-human-identity-security-key-management/requirements.txt
+python3 curriculum/advanced/07-non-human-identity-security-key-management/lab.py
+pytest -q curriculum/advanced/07-non-human-identity-security-key-management/tests/test_security.py
+```
+
+The credential-free lab issues and validates a real Ed25519 X.509-SVID, exchanges the verified workload identity for a short-lived signed access token, binds that token to a DPoP key, validates the exact HTTP request, rotates purpose-bound keys, rejects replay, and redacts common credential forms. Its 24 labelled cases produce 24/24 correct hardened decisions while a signature-free bearer baseline makes 21 invalid allows.
+
+The deterministic CA and private keys exist only for reproducible teaching. Production workloads obtain rotating credentials through a local workload API and keep non-exportable keys in an appropriate platform, KMS, HSM, or confidential-computing boundary.
+
+# State of the art as of October 2026
+
+- SPIFFE's stable Workload API includes X.509-SVID and JWT-SVID profiles; its WIT-SVID profile is incubating and optional. Treat emerging WIT support as an evaluated option, not a universal production baseline.
+- OAuth Security BCP [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) recommends asymmetric client authentication where feasible and sender-constrained access tokens using mTLS or DPoP.
+- [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705) standardizes OAuth mutual-TLS client authentication and certificate-bound tokens; [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449) standardizes DPoP; [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693) standardizes token exchange.
+- The IETF [WIMSE working group](https://datatracker.ietf.org/group/wimse/) is developing architecture and protocol work for workload identity across multiple systems. These Internet-Drafts are emerging work, not RFCs.
+- NIST [SP 800-57 Part 1 Rev. 5](https://csrc.nist.gov/pubs/sp/800/57/pt1/r5/final) remains the general key-management foundation: inventory and metadata, purpose, cryptoperiod, protection, rotation, revocation, recovery, and destruction are one lifecycle.
+
+The lab uses `cryptography` and `PyJWT`, common audited building blocks, but wraps them with strict profiles and local policy. A library call does not decide trust domain, subject, audience, scope, sender binding, identity status, or key purpose.
 
 ---
 

@@ -1,50 +1,26 @@
 [
-  {
-    "attack": "stolen bearer token",
-    "control": "short lifetime + sender constraint + narrow scope"
-  },
-  {
-    "attack": "private key exfiltration",
-    "control": "KMS/HSM/non-exportable workload key"
-  },
-  {
-    "attack": "token replay",
-    "control": "DPoP/mTLS + jti/nonce where applicable"
-  },
-  {
-    "attack": "audience confusion",
-    "control": "strict aud validation"
-  },
-  {
-    "attack": "credential fan-out",
-    "control": "tool-specific token exchange"
-  },
-  {
-    "attack": "secret in prompt",
-    "control": "credential broker outside model context"
-  },
-  {
-    "attack": "secret in logs",
-    "control": "redaction + telemetry controls"
-  },
-  {
-    "attack": "stale credential after rotation",
-    "control": "bounded overlap + revocation"
-  },
-  {
-    "attack": "compromised CI identity",
-    "control": "separate build/runtime authority"
-  },
-  {
-    "attack": "generic signing oracle",
-    "control": "signing policy + structured requests"
-  },
-  {
-    "attack": "break-glass persistence",
-    "control": "automatic expiry + approval"
-  },
-  {
-    "attack": "orphaned NHI",
-    "control": "ownership + lifecycle automation"
-  }
+  {"case_id":"valid","category":"valid","expected_allowed":true},
+  {"case_id":"valid-rotated-dpop","category":"valid","expected_allowed":true},
+  {"case_id":"svid-wrong-id","category":"svid","expected_allowed":false},
+  {"case_id":"svid-expired","category":"svid","expected_allowed":false},
+  {"case_id":"svid-untrusted-ca","category":"svid","expected_allowed":false},
+  {"case_id":"token-forged","category":"token","expected_allowed":false},
+  {"case_id":"token-wrong-subject","category":"token","expected_allowed":false},
+  {"case_id":"token-wrong-audience","category":"token","expected_allowed":false},
+  {"case_id":"token-expired","category":"token","expected_allowed":false},
+  {"case_id":"token-long-lived","category":"token","expected_allowed":false},
+  {"case_id":"token-scope-escalation","category":"token","expected_allowed":false},
+  {"case_id":"identity-quarantined","category":"lifecycle","expected_allowed":false},
+  {"case_id":"identity-retired","category":"lifecycle","expected_allowed":false},
+  {"case_id":"dpop-wrong-key","category":"sender","expected_allowed":false},
+  {"case_id":"dpop-wrong-method","category":"sender","expected_allowed":false},
+  {"case_id":"dpop-wrong-uri","category":"sender","expected_allowed":false},
+  {"case_id":"dpop-wrong-token","category":"sender","expected_allowed":false},
+  {"case_id":"dpop-wrong-nonce","category":"sender","expected_allowed":false},
+  {"case_id":"dpop-stale","category":"sender","expected_allowed":false},
+  {"case_id":"dpop-replay","category":"sender","expected_allowed":false},
+  {"case_id":"request-wrong-method","category":"request","expected_allowed":false},
+  {"case_id":"request-wrong-uri","category":"request","expected_allowed":false},
+  {"case_id":"request-wrong-nonce","category":"request","expected_allowed":false},
+  {"case_id":"request-wrong-action","category":"request","expected_allowed":false}
 ]
