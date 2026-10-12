@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.corp.example/agent-governance-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["@context", "id", "type", "issuer", "validFrom", "validUntil", "credentialSubject", "credentialStatus", "credentialSchema"],
+  "properties": {
+    "@context": {"const": ["https://www.w3.org/ns/credentials/v2"]},
+    "id": {"type": "string", "minLength": 1},
+    "type": {"const": ["VerifiableCredential", "AgentGovernanceCredential"]},
+    "issuer": {"const": "https://governance.corp.example"},
+    "validFrom": {"type": "integer"},
+    "validUntil": {"type": "integer"},
+    "credentialSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tenantId", "approvedActions", "approvedResources", "policyVersion"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "tenantId": {"type": "string", "minLength": 1},
+        "approvedActions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "approvedResources": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+        "policyVersion": {"type": "string", "minLength": 1}
+      }
+    },
+    "credentialStatus": {"$ref": "#/$defs/status"},
+    "credentialSchema": {"const": {"id": "https://schemas.corp.example/agent-governance-v1", "type": "JsonSchema"}}
+  },
+  "$defs": {
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "statusPurpose", "statusListIndex", "statusListCredential"],
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"const": "BitstringStatusListEntry"},
+        "statusPurpose": {"const": "revocation"},
+        "statusListIndex": {"type": "string", "pattern": "^[0-9]+$"},
+        "statusListCredential": {"type": "string", "format": "uri"}
+      }
+    }
+  }
+}

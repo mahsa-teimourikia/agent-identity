@@ -1,50 +1,44 @@
 [
-  {
-    "case": "forged_signature",
-    "expected": "deny"
-  },
-  {
-    "case": "valid_credential_untrusted_issuer",
-    "expected": "deny"
-  },
-  {
-    "case": "subject_substitution",
-    "expected": "deny"
-  },
-  {
-    "case": "expired_evaluation",
-    "expected": "deny_or_step_up"
-  },
-  {
-    "case": "revoked_registration",
-    "expected": "deny"
-  },
-  {
-    "case": "workload_release_mismatch",
-    "expected": "deny"
-  },
-  {
-    "case": "selective_disclosure_unknown_claim",
-    "expected": "no_privilege"
-  },
-  {
-    "case": "assurance_laundering",
-    "expected": "deny"
-  },
-  {
-    "case": "issuer_compromise",
-    "expected": "deny"
-  },
-  {
-    "case": "conflicting_quarantine_evidence",
-    "expected": "deny"
-  },
-  {
-    "case": "supply_chain_digest_mismatch",
-    "expected": "deny"
-  },
-  {
-    "case": "presentation_replay",
-    "expected": "deny"
-  }
+  {"case_id": "valid_complete_evidence", "category": "valid", "expected": "allow"},
+  {"case_id": "presentation_signature_tampered", "category": "presentation", "expected": "deny"},
+  {"case_id": "presentation_wrong_audience", "category": "presentation", "expected": "deny"},
+  {"case_id": "presentation_wrong_nonce", "category": "presentation", "expected": "deny"},
+  {"case_id": "presentation_expired", "category": "presentation", "expected": "deny"},
+  {"case_id": "presentation_replayed", "category": "presentation", "expected": "deny"},
+  {"case_id": "registration_signature_tampered", "category": "credential", "expected": "deny"},
+  {"case_id": "credential_subject_substitution", "category": "credential", "expected": "deny"},
+  {"case_id": "credential_audience_substitution", "category": "credential", "expected": "deny"},
+  {"case_id": "credential_expired", "category": "credential", "expected": "deny"},
+  {"case_id": "credential_ttl_excessive", "category": "credential", "expected": "deny"},
+  {"case_id": "credential_schema_invalid", "category": "credential", "expected": "deny"},
+  {"case_id": "credential_claim_not_allowed", "category": "credential", "expected": "deny"},
+  {"case_id": "registration_revoked", "category": "status", "expected": "deny"},
+  {"case_id": "evaluation_revoked", "category": "status", "expected": "deny"},
+  {"case_id": "governance_revoked", "category": "status", "expected": "deny"},
+  {"case_id": "signed_status_list_expired", "category": "status", "expected": "deny"},
+  {"case_id": "status_cache_stale", "category": "status", "expected": "deny"},
+  {"case_id": "registration_release_mismatch", "category": "binding", "expected": "deny"},
+  {"case_id": "registration_holder_mismatch", "category": "binding", "expected": "deny"},
+  {"case_id": "evaluation_release_mismatch", "category": "binding", "expected": "deny"},
+  {"case_id": "evaluation_config_mismatch", "category": "binding", "expected": "deny"},
+  {"case_id": "evaluation_failed", "category": "negative-evidence", "expected": "deny"},
+  {"case_id": "governance_tenant_mismatch", "category": "binding", "expected": "deny"},
+  {"case_id": "governance_action_not_approved", "category": "binding", "expected": "deny"},
+  {"case_id": "governance_resource_not_approved", "category": "binding", "expected": "deny"},
+  {"case_id": "governance_policy_stale", "category": "binding", "expected": "deny"},
+  {"case_id": "eat_signature_tampered", "category": "workload", "expected": "deny"},
+  {"case_id": "eat_nonce_mismatch", "category": "workload", "expected": "deny"},
+  {"case_id": "eat_workload_mismatch", "category": "workload", "expected": "deny"},
+  {"case_id": "eat_release_mismatch", "category": "workload", "expected": "deny"},
+  {"case_id": "eat_config_mismatch", "category": "workload", "expected": "deny"},
+  {"case_id": "eat_tool_manifest_mismatch", "category": "workload", "expected": "deny"},
+  {"case_id": "eat_expired", "category": "workload", "expected": "deny"},
+  {"case_id": "provenance_release_mismatch", "category": "supply-chain", "expected": "deny"},
+  {"case_id": "provenance_builder_mismatch", "category": "supply-chain", "expected": "deny"},
+  {"case_id": "provenance_source_mismatch", "category": "supply-chain", "expected": "deny"},
+  {"case_id": "agent_quarantined", "category": "lifecycle", "expected": "deny"},
+  {"case_id": "runtime_risk_high", "category": "lifecycle", "expected": "deny"},
+  {"case_id": "relationship_inactive", "category": "lifecycle", "expected": "deny"},
+  {"case_id": "task_inactive", "category": "lifecycle", "expected": "deny"},
+  {"case_id": "local_policy_stale", "category": "lifecycle", "expected": "deny"}
 ]

@@ -1,50 +1,42 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.corp.example/agent-registration-v1",
   "type": "object",
-  "required": [
-    "id",
-    "type",
-    "issuer",
-    "validFrom",
-    "validUntil",
-    "credentialSubject"
-  ],
+  "additionalProperties": false,
+  "required": ["@context", "id", "type", "issuer", "validFrom", "validUntil", "credentialSubject", "credentialStatus", "credentialSchema"],
   "properties": {
-    "id": {
-      "type": "string"
-    },
-    "type": {
-      "type": "array",
-      "contains": {
-        "const": "AgentRegistrationCredential"
-      }
-    },
-    "issuer": {
-      "type": "string"
-    },
-    "validFrom": {
-      "type": "string"
-    },
-    "validUntil": {
-      "type": "string"
-    },
+    "@context": {"const": ["https://www.w3.org/ns/credentials/v2"]},
+    "id": {"type": "string", "minLength": 1},
+    "type": {"const": ["VerifiableCredential", "AgentRegistrationCredential"]},
+    "issuer": {"const": "https://registry.corp.example"},
+    "validFrom": {"type": "integer"},
+    "validUntil": {"type": "integer"},
     "credentialSubject": {
       "type": "object",
-      "required": [
-        "id",
-        "owner",
-        "agentClass"
-      ],
+      "additionalProperties": false,
+      "required": ["id", "owner", "agentClass", "releaseDigest", "holderJkt"],
       "properties": {
-        "id": {
-          "type": "string"
-        },
-        "owner": {
-          "type": "string"
-        },
-        "agentClass": {
-          "type": "string"
-        }
+        "id": {"type": "string", "minLength": 1},
+        "owner": {"type": "string", "minLength": 1},
+        "agentClass": {"type": "string", "minLength": 1},
+        "releaseDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "holderJkt": {"type": "string", "minLength": 20}
+      }
+    },
+    "credentialStatus": {"$ref": "#/$defs/status"},
+    "credentialSchema": {"const": {"id": "https://schemas.corp.example/agent-registration-v1", "type": "JsonSchema"}}
+  },
+  "$defs": {
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "statusPurpose", "statusListIndex", "statusListCredential"],
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"const": "BitstringStatusListEntry"},
+        "statusPurpose": {"const": "revocation"},
+        "statusListIndex": {"type": "string", "pattern": "^[0-9]+$"},
+        "statusListCredential": {"type": "string", "format": "uri"}
       }
     }
   }

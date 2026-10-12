@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.corp.example/agent-evaluation-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["@context", "id", "type", "issuer", "validFrom", "validUntil", "credentialSubject", "credentialStatus", "credentialSchema"],
+  "properties": {
+    "@context": {"const": ["https://www.w3.org/ns/credentials/v2"]},
+    "id": {"type": "string", "minLength": 1},
+    "type": {"const": ["VerifiableCredential", "AgentEvaluationCredential"]},
+    "issuer": {"const": "https://evaluation.corp.example"},
+    "validFrom": {"type": "integer"},
+    "validUntil": {"type": "integer"},
+    "credentialSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "releaseDigest", "configDigest", "suite", "result", "criticalFailures"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "releaseDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "configDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "suite": {"const": "agent-security-v7"},
+        "result": {"enum": ["pass", "fail"]},
+        "criticalFailures": {"type": "integer", "minimum": 0}
+      }
+    },
+    "credentialStatus": {"$ref": "#/$defs/status"},
+    "credentialSchema": {"const": {"id": "https://schemas.corp.example/agent-evaluation-v1", "type": "JsonSchema"}}
+  },
+  "$defs": {
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "statusPurpose", "statusListIndex", "statusListCredential"],
+      "properties": {
+        "id": {"type": "string"},
+        "type": {"const": "BitstringStatusListEntry"},
+        "statusPurpose": {"const": "revocation"},
+        "statusListIndex": {"type": "string", "pattern": "^[0-9]+$"},
+        "statusListCredential": {"type": "string", "format": "uri"}
+      }
+    }
+  }
+}

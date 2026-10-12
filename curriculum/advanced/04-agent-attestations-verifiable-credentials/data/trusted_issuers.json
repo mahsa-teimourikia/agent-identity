@@ -1,27 +1,34 @@
 {
-  "did:web:registry.example": {
-    "types": [
-      "AgentRegistrationCredential"
-    ],
+  "https://registry.corp.example": {
     "status": "active",
-    "max_ttl_days": 90
+    "credential_types": ["AgentRegistrationCredential"],
+    "allowed_subject_claims": ["owner", "agentClass", "releaseDigest", "holderJkt"],
+    "max_ttl_seconds": 900,
+    "schema": "schemas/agent-registration-vc.schema.json",
+    "status_uri": "https://registry.corp.example/status/agents"
   },
-  "did:web:evaluator.example": {
-    "types": [
-      "AgentEvaluationCredential"
-    ],
+  "https://evaluation.corp.example": {
     "status": "active",
-    "max_ttl_days": 14
+    "credential_types": ["AgentEvaluationCredential"],
+    "allowed_subject_claims": ["releaseDigest", "configDigest", "suite", "result", "criticalFailures"],
+    "max_ttl_seconds": 600,
+    "schema": "schemas/agent-evaluation-vc.schema.json",
+    "status_uri": "https://evaluation.corp.example/status/results"
   },
-  "did:web:governance.example": {
-    "types": [
-      "AgentGovernanceCredential"
-    ],
+  "https://governance.corp.example": {
     "status": "active",
-    "max_ttl_days": 30
+    "credential_types": ["AgentGovernanceCredential"],
+    "allowed_subject_claims": ["tenantId", "approvedActions", "approvedResources", "policyVersion"],
+    "max_ttl_seconds": 900,
+    "schema": "schemas/agent-governance-vc.schema.json",
+    "status_uri": "https://governance.corp.example/status/approvals"
   },
-  "did:web:attacker.example": {
-    "types": [],
-    "status": "blocked"
+  "https://attacker.example": {
+    "status": "blocked",
+    "credential_types": [],
+    "allowed_subject_claims": [],
+    "max_ttl_seconds": 0,
+    "schema": "",
+    "status_uri": "https://attacker.example/status"
   }
 }
