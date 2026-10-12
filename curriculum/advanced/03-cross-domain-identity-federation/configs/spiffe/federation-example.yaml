@@ -4,5 +4,7 @@ federates_with:
     bundle_endpoint_url: https://spire.partner.example/bundle
     bundle_endpoint_profile: https_web
     local_policy:
+      # This application policy is separate from the SPIFFE endpoint profile.
+      expected_bundle_sha256: 3b424972e1bfe7edc5ef4683d9062bff49be140bbe365567cb532a061a024046
       allowed_spiffe_ids:
         - spiffe://partner.example/prod/research-agent
