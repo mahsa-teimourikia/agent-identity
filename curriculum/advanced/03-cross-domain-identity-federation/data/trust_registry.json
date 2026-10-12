@@ -2,16 +2,34 @@
   "partner.example": {
     "status": "active",
     "oidc_issuer": "https://id.partner.example",
+    "accepted_trust_anchor": "https://trust.corp.example",
     "spiffe_trust_domain": "partner.example",
+    "spiffe_bundle_sha256": "3b424972e1bfe7edc5ef4683d9062bff49be140bbe365567cb532a061a024046",
     "accepted_audiences": [
-      "claims-mcp"
+      "https://mcp.corp.example"
     ],
     "allowed_agent_types": [
       "research"
     ],
-    "max_ttl_seconds": 600,
+    "allowed_actions": [
+      "knowledge.search",
+      "claim.read"
+    ],
+    "allowed_resources": [
+      "claim:483"
+    ],
+    "allowed_spiffe_ids": [
+      "spiffe://partner.example/prod/research-agent"
+    ],
+    "allowed_authorization_servers": [
+      "https://id.partner.example"
+    ],
+    "max_token_ttl_seconds": 600,
     "max_delegation_depth": 1,
-    "require_sender_constraint": true
+    "max_chain_length": 4,
+    "metadata_max_age_seconds": 300,
+    "require_sender_constraint": true,
+    "policy_version": "federation-policy-2026-10-12"
   },
   "vendor.example": {
     "status": "disabled",

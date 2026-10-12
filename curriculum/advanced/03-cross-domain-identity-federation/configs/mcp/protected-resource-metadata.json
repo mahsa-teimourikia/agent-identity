@@ -1,6 +1,8 @@
 {
   "resource": "https://mcp.corp.example",
   "authorization_servers": [
-    "https://id.corp.example"
-  ]
+    "https://id.partner.example"
+  ],
+  "bearer_methods_supported": ["header"],
+  "scopes_supported": ["knowledge.search"]
 }

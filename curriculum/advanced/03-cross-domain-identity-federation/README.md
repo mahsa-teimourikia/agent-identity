@@ -1,1014 +1,591 @@
-# Advanced 03 — Cross-Domain Identity Federation & Interoperability for Agents
+# Cross-Domain Identity Federation & Interoperability for Agents
 
-> **Goal:** design agent identity that works safely across organizations, clouds, platforms, trust domains, and third-party agent ecosystems without collapsing all parties into one identity namespace.
+**Level:** Advanced<br>
+**Estimated time:** 5–7 hours<br>
+**Format:** chapter, executed notebook, reusable Python lab, signed fixtures, configuration examples, and adversarial tests<br>
+**Last reviewed:** 2026-10-12
 
-![Cross-Domain Agent Identity Federation](images/cross-domain-agent-identity-federation.png)
+> **Goal:** design, implement, and evaluate cross-domain agent access that verifies a foreign trust chain and workload identity, resists OAuth/MCP mix-up, preserves namespaces, and keeps authorization local and revocable.
 
-## Why this matters
-
-Enterprise agents increasingly cross boundaries:
+An insurer sometimes needs a specialist agent operated by a partner. The partner
+can prove the agent's identity, but it must not decide what that agent may do in
+the insurer's environment. This course builds a credential-free version of that
+boundary:
 
 ```text
-Enterprise A user
-    ↓
-Enterprise A agent
-    ↓
-Partner / SaaS agent
-    ↓
-External MCP server
-    ↓
-Enterprise B API
+partner federation metadata ─┐
+partner OAuth access token ───┼─> corp federation gateway ─> local policy ─> MCP tool
+partner X.509-SVID ───────────┤
+corp delegation grant ────────┘
 ```
 
-The hard question is not merely whether a credential has a valid signature. It is:
+The valid agent can perform `knowledge.search` for one claim and one task. The
+gateway rejects another issuer, trust anchor, bundle, workload, tenant, resource,
+action, authorization server, policy version, or stale lifecycle state.
 
-> **Why should this domain trust the issuer, metadata, workload identity, delegation, policy semantics, and resource binding represented by that credential?**
-
-Federation is therefore **trust establishment + trust discovery + identity verification + local authorization**.
+> The lab implements a small, security-focused teaching profile. It is not a
+> complete OpenID Federation, OAuth, SPIFFE, or MCP implementation. Fixed time,
+> deterministic private keys, and in-memory state are for reproducibility only.
 
 ## Learning outcomes
 
-You will learn to:
+After this course you can:
 
-- distinguish identity federation from authorization federation;
-- model trust domains and federation relationships;
-- use OpenID Federation concepts: trust anchors, entity statements, subordinate statements, trust chains, metadata policies and trust marks;
-- understand why OpenID Federation became a Final Specification in 2026;
-- federate SPIFFE workload identities across trust domains;
-- preserve the `<trust-domain, bundle>` binding;
-- reason about one-way versus mutual SPIFFE federation;
-- model cross-domain OAuth/OIDC trust;
-- use issuer/audience/resource validation correctly;
-- integrate MCP Protected Resource Metadata and authorization-server discovery;
-- design third-party agent onboarding;
-- map foreign identities into local policy subjects without unsafe string rewriting;
-- separate authentication interoperability from authorization semantics;
-- build trust registries and partner policy;
-- constrain cross-domain delegation;
-- handle key rotation, metadata refresh, revocation and federation termination;
-- defend against malicious issuers, trust-chain substitution, metadata poisoning, redirect attacks and namespace collisions;
-- create auditable federation evidence.
+1. separate discovery, trust establishment, authentication, identity mapping,
+   delegation, and local authorization;
+2. construct and verify signed OpenID Federation-style entity statements that
+   terminate at a locally configured trust anchor;
+3. explain deterministic hierarchical metadata-policy resolution and why a
+   conflicting policy invalidates a chain;
+4. verify a real X.509-SVID against an exact `<trust domain, bundle>` binding;
+5. validate an access token against its verified federation subject, audience,
+   lifetime, sender key, agent class, and local partner agreement;
+6. preserve `(issuer, subject)` as a compound identity without importing
+   foreign roles;
+7. prevent OAuth authorization-server mix-up and unsafe MCP authorization-server
+   selection;
+8. constrain cross-domain delegation by tenant, task, audience, action,
+   resource, purpose, lifetime, depth, and current policy;
+9. test offboarding, stale metadata, rotation, namespace collision, and trust
+   substitution; and
+10. define measurable release and revocation objectives.
 
----
+## Prerequisites
 
-# 1. Federation is not "trust everybody"
+Complete the intermediate OAuth/OIDC, token exchange, MCP authorization, and
+fine-grained authorization courses, followed by Advanced 01 and 02. You should
+recognize JWT claims, JWKs, X.509 certificates, SPIFFE IDs, sender constraints,
+and policy enforcement points.
 
-Federation should mean:
+## Success criteria
 
-```text
-Domain A chooses to accept a bounded set of assertions
-from Domain B
-under explicit trust and policy conditions.
-```
+The reference path is complete when:
 
-It should not mean:
+- all 46 labelled cases match their expected decision;
+- invalid allows and valid-request blocks are both zero;
+- all focused Python tests pass, including real JWT and X.509 verification;
+- trust-chain, token, SVID, delegation, OAuth transaction, lifecycle, and local
+  policy failures have stable reason codes;
+- all notebook code runs top to bottom without credentials; and
+- evidence records contain identifiers and hashes, never tokens or signatures.
 
-```text
-any token from Domain B gets local privileges
-```
+## Non-goals
 
-Local policy remains authoritative.
+This course does not implement network discovery, the complete OpenID
+Federation metadata-policy language, a SPIRE control plane, browser redirects,
+dynamic client registration, or production key storage. Those belong to mature
+libraries and deployed infrastructure. The lab makes the trust and authorization
+invariants observable before introducing those systems.
 
----
+## 1. Mental model: six separate decisions
 
-# 2. Four separate federation questions
+“Federation” often hides several different operations:
 
-For every external agent, ask:
+| Decision | Question | Local source of authority |
+|---|---|---|
+| Discovery | Where is metadata or a key set? | protocol plus pinned starting point |
+| Trust establishment | Why trust this issuer or workload domain? | trust anchor, bundle, partner agreement |
+| Authentication | Which issuer and subject control this credential? | verified signature and claims |
+| Mapping | Which local principal represents that compound identity? | deterministic namespace-preserving map |
+| Delegation | What authority was intentionally conveyed? | verified, bounded grant |
+| Authorization | May this exact request happen now? | local policy and current resource state |
 
-```text
-1. Who issued this identity?
-2. Why do we trust that issuer?
-3. What exactly does the credential prove?
-4. What may this foreign identity do here?
-```
+Discovery is not trust. Authentication is not authorization. A trust mark is
+evidence, not permission. A valid partner role named `admin` has no local meaning
+unless local policy explicitly maps it—and broad role import is usually the
+wrong design.
 
-The first three are authentication/trust-establishment questions.
-
-The fourth is local authorization.
-
----
-
-# 3. Trust-domain model
-
-Represent domains explicitly:
-
-```text
-corp.example
-partner.example
-vendor.example
-prod.corp.example
-pci.corp.example
-```
-
-A domain is an administrative/security boundary with its own authority and lifecycle.
-
-Do not infer trust solely from DNS similarity.
-
----
-
-# 4. Federation relationship
-
-A federation relationship should carry policy:
-
-```json
-{
-  "foreign_domain": "partner.example",
-  "status": "active",
-  "accepted_identity_types": ["workload", "agent"],
-  "allowed_agent_classes": ["research"],
-  "allowed_resources": ["knowledge"],
-  "max_delegation_depth": 1,
-  "max_credential_ttl_seconds": 600,
-  "require_sender_constraint": true
-}
-```
-
----
-
-# 5. Trust anchors
-
-A trust anchor is a locally configured root of trust.
-
-Examples:
+The effective authority is an intersection:
 
 ```text
-OpenID Federation trust anchor
-SPIFFE trust-domain bundle/bootstrap
-enterprise CA
-approved issuer registry
+verified federation subject
+∩ verified workload identity
+∩ valid delegation
+∩ partner agreement
+∩ protected-resource and AS binding
+∩ local resource policy
+∩ current lifecycle and risk state
 ```
 
-Trust anchors should be governed, versioned and auditable.
+Any empty intersection denies.
 
----
+## 2. Trust domains and compound identity
 
-# 6. OpenID Federation 1.0
-
-OpenID Federation 1.0 became an OpenID Final Specification in February 2026.
-
-It supports multilateral federation where trust can be mediated through federation entities rather than requiring every participant to configure every other participant directly.
-
-Core concepts:
+A trust domain is an administrative and cryptographic boundary, not merely a
+DNS suffix. These identities are different even when their local strings match:
 
 ```text
-Entity Configuration
-Entity Statement
-Trust Anchor
-Trust Chain
-Subordinate Statement
-Metadata Policy
-Trust Mark
+(https://id.partner-a.example, agent:research)
+(https://id.partner-b.example, agent:research)
 ```
 
----
+The lab maps the verified pair to a stable opaque local principal. It never
+drops the issuer. Human-readable aliases may be displayed, but authorization
+and audit evidence retain the qualified identity.
 
-# 7. Entity Configuration
+Never trust `email.endswith("@partner.example")`, an agent's self-declared
+provider, a prompt claim, or a tool argument as identity. Derive issuer,
+subject, workload, tenant, and relationship from authenticated application
+state.
 
-An entity publishes a signed Entity Configuration describing itself and its federation metadata.
+## 3. OpenID Federation 1.0 mechanics
 
-Conceptually:
+[OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html)
+became an OpenID Final Specification on 17 February 2026. It supports
+multilateral trust through signed entity statements and configured trust
+anchors. It standardizes trust operations and resolved metadata; it does not
+replace OAuth/OIDC protocol operations or local authorization.
+
+### Entity statements and chain order
+
+The lab chain is:
 
 ```text
-https://agent.partner.example/.well-known/openid-federation
+ES[0]  issuer leaf,         subject leaf          (self-issued configuration)
+ES[1]  issuer intermediate, subject leaf          (subordinate statement)
+ES[2]  issuer trust anchor, subject intermediate  (subordinate statement)
 ```
 
-The document is signed and contains entity metadata plus federation relationships.
-
-Do not treat discovery as trust by itself.
-
----
-
-# 8. Entity Statements
-
-An Entity Statement is a signed JWT in which one federation entity makes statements about another entity.
-
-This lets a relying party build a cryptographically verifiable chain toward a configured trust anchor.
-
----
-
-# 9. Trust chains
-
-Conceptually:
+For each adjacent pair:
 
 ```text
-Local Trust Anchor
-       ↓
-Federation Authority
-       ↓
-Partner Organization
-       ↓
-Partner Agent Service
+ES[j].iss == ES[j+1].sub
 ```
 
-A chain is accepted only if:
+The accepted trust anchor is the **issuer of the final statement**, not its
+subject. Every statement is signed and time-bounded. The verifier also checks
+authority hints, distinct statement IDs, maximum chain length, path constraints,
+and exact leaf approval.
+
+The anchor identifier and public key are local configuration. Finding an anchor
+name in a downloaded document is not sufficient.
+
+### Federation entity discovery
+
+In a real deployment, discovery begins with the leaf entity identifier and a
+local list of trust-anchor identifiers and keys. Entity configurations and
+subordinate statements are collected until one or more candidate chains reach
+an accepted anchor. Every candidate is independently validated. If several
+chains are valid, deterministic local selection policy chooses one.
+
+Network retrieval adds SSRF, redirect, DNS, TLS, size, timeout, caching, and
+content-type concerns. The offline lab deliberately begins after retrieval and
+does not imply that arbitrary URLs are safe to fetch.
+
+### Metadata policy
+
+Superior entities can constrain subordinate metadata. Policies are resolved
+from the most superior statement toward the leaf. A subordinate can narrow a
+constraint; it cannot repeal or widen a superior constraint. Conflicts make the
+chain invalid.
+
+The lab executes a documented subset—`essential`, `subset_of`, and `one_of`—for
+authorization-server metadata. The anchor permits `private_key_jwt` or
+`tls_client_auth`; the intermediate narrows this to `private_key_jwt`; the leaf
+must comply. A production implementation must support the complete Final
+Specification, critical operators, metadata overlays, constraints, and all
+required validation.
+
+### Trust marks
+
+A trust mark is a signed statement of conformance to a well-scoped requirement.
+Local policy still decides:
+
+- whether the trust-mark issuer is approved;
+- which mark type matters for this operation;
+- whether the mark is current and unrevoked; and
+- what, if any, authorization attribute it contributes.
+
+Do not convert “member of federation” into “may access every member.”
+
+## 4. SPIFFE federation mechanics
+
+A SPIFFE ID is a URI such as:
 
 ```text
-signatures validate
-issuer/subject relationships are coherent
-metadata policies resolve
-time validity holds
-chain terminates at an accepted trust anchor
-```
-
----
-
-# 10. Metadata policy
-
-Federation is not only about keys.
-
-A superior authority can constrain subordinate metadata.
-
-Examples:
-
-```text
-permitted signing algorithms
-required grant types
-allowed redirect patterns
-required authentication methods
-```
-
-This helps enforce federation-wide security baselines.
-
----
-
-# 11. Trust marks
-
-Trust marks can represent externally attested properties such as conformance or membership.
-
-A trust mark is evidence, not blanket authorization.
-
-Local policy must decide:
-
-```text
-which trust-mark issuers are trusted?
-which marks matter?
-how fresh must they be?
-what permissions do they influence?
-```
-
----
-
-# 12. Cross-domain OIDC/OAuth
-
-For an external identity token or access token, validate at least:
-
-```text
-issuer
-signature/key
-audience/resource
-expiry/not-before
-token type
-required claims
-authorization-server relationship
-```
-
-Then map verified claims into local policy context.
-
----
-
-# 13. Do not authorize on email/domain strings
-
-Bad:
-
-```python
-if user.email.endswith("@partner.example"):
-    allow()
-```
-
-Better:
-
-```text
-verified issuer
-+
-verified subject
-+
-approved federation relationship
-+
-local relationship/policy
-```
-
-Human-readable identifiers are not trust anchors.
-
----
-
-# 14. Foreign identity mapping
-
-Avoid destructive translation such as:
-
-```text
-partner:agent:123 → local:agent:123
-```
-
-because namespaces may collide.
-
-Preserve issuer/domain:
-
-```text
-federated principal =
-  (issuer = partner.example,
-   subject = agent:123)
-```
-
-This is a compound identity.
-
----
-
-# 15. SPIFFE trust domains
-
-SPIFFE IDs are URI identities:
-
-```text
-spiffe://trust-domain/path
-```
-
-The trust domain qualifies the identity namespace.
-
-Example:
-
-```text
-spiffe://corp.example/prod/claims-agent
 spiffe://partner.example/prod/research-agent
 ```
 
-These are different identities even if their paths match.
-
----
-
-# 16. SPIFFE bundles
-
-A SPIFFE bundle contains the public key material authoritative for a trust domain.
-
-Critical invariant:
+An X.509-SVID proves control of a private key and carries the SPIFFE ID in a URI
+SAN. A bundle contains the public trust material for one trust domain. The key
+invariant from the
+[SPIFFE Trust Domain and Bundle specification](https://spiffe.io/docs/latest/spiffe-specs/spiffe_trust_domain_and_bundle/)
+is the independently managed tuple:
 
 ```text
-trust-domain name ↔ correct bundle
+<trust-domain name, bundle>
 ```
 
-If an attacker can replace that association, they can undermine federation.
+If an attacker can replace both sides of that association, certificate
+verification can succeed for the attacker's domain material. The lab pins a
+SHA-256 fingerprint for its synthetic bundle, verifies the X.509 signature and
+lifetime, extracts exactly one URI SAN, and requires the exact allowed SPIFFE
+ID.
 
----
+### Bundle endpoints and rotation
 
-# 17. SPIFFE federation
+[SPIFFE Federation](https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/)
+defines `https_web` and `https_spiffe` bundle endpoint profiles. Endpoint
+configuration is security-sensitive. TLS validation, expected host or endpoint
+SPIFFE ID, redirects, bootstrap bundle, and profile must be protected.
 
-SPIFFE federation lets workloads authenticate SVIDs from foreign trust domains by obtaining the foreign domain's bundle.
+New signing keys should be published before use; old keys remain until all SVIDs
+they signed have expired. The lab's rotation test proves that a new bundle is
+rejected until the local fingerprint binding is explicitly updated.
 
-Conceptually:
+Federation is directional. If corp accepts partner SVIDs, partner does not
+automatically accept corp SVIDs. Mutual authentication requires deliberate
+configuration in both directions.
+
+SPIFFE authenticates workloads. It does not prove a user delegation, task,
+purpose, or permission on `claim:483`.
+
+## 5. OAuth and MCP across multiple issuers
+
+The partner issuer signs a short-lived access token. The gateway checks:
+
+- `typ`, pinned asymmetric algorithm, exact `kid`, and signature;
+- issuer equality with the verified federation leaf and partner agreement;
+- exact MCP resource audience;
+- current `iat`/`exp` and maximum partner TTL;
+- non-empty subject, tenant, task, and token ID;
+- allowed agent class, action set, and resource set; and
+- sender-key thumbprint when the agreement requires sender constraint.
+
+The token does not import foreign roles into local roles.
+
+### Protected Resource Metadata
+
+[RFC 9728](https://www.rfc-editor.org/rfc/rfc9728) defines OAuth Protected
+Resource Metadata. Its `authorization_servers` list advertises issuer
+identifiers that can be used with the resource. The RFC explicitly leaves
+secure determination of an appropriate authorization server to the application.
+
+Therefore the gateway requires:
 
 ```text
-corp.example SPIRE
-      ↕ bundle exchange
-partner.example SPIRE
+metadata.resource == exact expected resource
+advertised AS ∩ locally approved AS == exactly one issuer
+authorization response issuer == transaction's expected issuer
 ```
 
-Federation does not merge namespaces.
+Metadata naming an authorization server does not automatically approve it.
 
----
+### Mix-up defense
 
-# 18. Federation is directional
+An OAuth client that supports multiple authorization servers can be tricked into
+combining an authorization endpoint from one issuer with credentials or a token
+endpoint from another. [OAuth 2.0 Security Best Current Practice, RFC 9700](https://www.rfc-editor.org/rfc/rfc9700)
+requires a mix-up defense. The lab binds a transaction to the expected issuer
+and state, compares the authorization response `iss`, and consumes the response
+once. Production clients should follow RFC 9207 and the applicable OIDC/OAuth
+profile, use PKCE, exact redirect matching, and issuer-bound client credentials.
 
-SPIFFE federation relationships are one-way.
+### MCP state of practice
 
-If:
+The [MCP 2026-07-28 release](https://modelcontextprotocol.io/specification/2026-07-28)
+is the current stable protocol revision as of this review. Its authorization
+hardening includes RFC 9207 issuer validation and binding registered credentials
+to their issuer. The older 2025-11-25 revision remains relevant for migration,
+but new course guidance targets the current stable release.
+
+An MCP server must not pass an inbound token blindly to a downstream API. Use a
+resource-specific token or controlled token exchange, and reauthorize at each
+effect boundary.
+
+## 6. Local cross-domain delegation
+
+The corp authority signs a delegation grant for the foreign compound identity.
+It binds:
 
 ```text
-corp trusts partner
+grant ID + issuer
+foreign issuer + subject
+tenant + task
+MCP audience
+actions + resources + purpose
+issue time + expiry
+delegation depth
+local policy version
 ```
 
-that does not imply:
+Verification checks the signature and intersects grant authority with both the
+partner token and the federation agreement. The grant cannot outlive the access
+token or exceed maximum depth. The gateway then compares the exact request to
+the grant and current local policy.
+
+This is deliberately asymmetric: the partner proves its identity and token
+claims; corp grants access to corp resources.
+
+## 7. Trust registry and lifecycle
+
+`data/trust_registry.json` models locally governed trust, not model context. A
+relationship records status, exact issuers and anchor, bundle fingerprint,
+audiences, agent classes, actions, resources, workload IDs, authorization
+servers, time and depth bounds, sender-constraint requirement, freshness, and
+policy version.
+
+Lifecycle states should distinguish at least proposed, active, suspended,
+terminating, and removed. Partner offboarding must invalidate more than a portal
+record:
+
+1. disable the federation relationship;
+2. reject new trust chains and tokens;
+3. remove or quarantine foreign bundles and keys;
+4. invalidate local mappings and authorization caches;
+5. revoke delegations and issuer-bound OAuth client credentials;
+6. stop affected MCP and API sessions; and
+7. retain immutable evidence for investigation and compliance.
+
+Define measurable objectives such as:
 
 ```text
-partner trusts corp
+partner suspension → sensitive authorization denied within 30 seconds
+key compromise     → emergency bundle/JWKS refresh begins immediately
+planned rotation   → no valid SVID or token interruption
 ```
 
-Mutual authentication requires relationships in both directions.
+Availability posture is operation-specific. A low-risk read might use a bounded
+last-known-good metadata window. A financial write should normally fail closed.
+Staleness must be measured and visible—not hidden behind a successful cache hit.
 
-This is an important enterprise design property.
+## 8. Technology landscape
 
----
+| Approach | Best fit | Strengths | Limitations / selection questions |
+|---|---|---|---|
+| Bilateral OIDC/OAuth | a few known partners | mature libraries and operations | configuration grows pairwise; mix-up and issuer isolation matter |
+| OpenID Federation 1.0 | multilateral trust ecosystems | signed metadata, chains, hierarchical policy | newer Final Specification; require complete compliant implementation and governance |
+| SAML federation | existing workforce/B2B estates | mature enterprise support | XML and browser-centric profiles; weak fit for workload identity alone |
+| SPIFFE/SPIRE | workload-to-workload federation | short-lived SVIDs, automated rotation, platform neutrality | authenticates workload, not business delegation; control-plane operations required |
+| Cloud workload federation | cross-cloud or CI access | avoids static secrets, native IAM integration | provider-specific semantics and subject mapping |
+| Identity broker/gateway | legacy translation and protocol mediation | central integration and policy point | concentration risk, namespace errors, evidence loss, availability dependency |
+| Local policy engine | resource authorization | explicit local control and reason codes | requires trusted, current inputs; foreign role names are not portable policy |
 
-# 19. Bundle endpoints
+### Common implementation tools
 
-SPIFFE federation defines bundle endpoints and profiles for securely retrieving foreign bundles.
+- **PyJWT + cryptography:** transparent teaching of JWT and Ed25519/X.509
+  primitives; production code still needs a complete protocol library.
+- **Authlib or mature OIDC client libraries:** OAuth/OIDC protocol handling,
+  discovery, PKCE, and response validation; confirm OpenID Federation support
+  rather than assuming ordinary discovery implements it.
+- **SPIRE:** CNCF reference implementation for SPIFFE issuance and federation.
+  Officially maintained workload libraries are strongest in Go and Java;
+  evaluate community-language clients deliberately.
+- **MCP Tier 1 SDKs:** current protocol and authorization integration for remote
+  MCP clients/servers; enable and test current issuer-hardening behavior.
+- **OPA, Cedar, relationship stores, or cloud IAM:** local authorization after
+  foreign identity verification. Engine choice does not change the trust
+  boundary.
 
-Operational concerns include:
+## 9. Architecture patterns
+
+### Bilateral
+
+Each pair configures the other directly. It is simple and explicit for a small
+partner set, but rotation, policy consistency, and offboarding scale poorly.
+
+### Hub-and-spoke federation authority
+
+A governed authority anchors many participants. It reduces pairwise
+configuration and can apply common metadata policy. It also becomes critical
+infrastructure and a governance concentration point.
+
+### Brokered identity translation
+
+A gateway verifies the foreign identity and issues a local short-lived
+credential. Preserve original issuer, subject, chain, and mapping policy in
+evidence. The new credential must be narrower, audience-bound, and short-lived.
+
+### Workload federation plus local delegation
+
+SPIFFE authenticates the foreign runtime; a signed business delegation and local
+policy determine resource authority. This is the pattern implemented by the lab
+because it exposes each trust layer instead of collapsing them.
+
+## 10. Threat model and failure behavior
+
+| Threat | Required control | Expected outcome |
+|---|---|---|
+| valid token from unknown issuer | exact issuer and verified chain | deny |
+| substituted anchor or chain link | pinned anchor, every signature/link | deny |
+| permissive or conflicting metadata | hierarchical policy resolution | invalidate chain |
+| algorithm downgrade | local algorithm allowlist plus superior policy | deny |
+| namespace collision | issuer-qualified subject mapping | distinct principals |
+| bundle substitution | exact domain-to-bundle binding | deny |
+| wrong SPIFFE path | exact workload allowlist | deny |
+| foreign `admin` role | no direct local-role import | no local privilege |
+| authorization-server mix-up | issuer-bound transaction and response `iss` | abort flow |
+| malicious PRM advertisement | intersect with local AS allowlist | deny/require selection |
+| token redirection | resource/audience binding | deny |
+| delegation widening | set intersection and independent local policy | deny |
+| stale metadata or partner suspension | freshness and current relationship checks | deny or explicit bounded mode |
+| trust path exists through another partner | directed path is not an implicit trust edge | no authority |
+
+## 11. Evidence and observability
+
+The gateway records observable facts:
+
+- trace and logical operation IDs;
+- decision and stable reason code;
+- foreign issuer and hashed foreign subject;
+- verified workload ID;
+- audience and resource;
+- trust-chain digest; and
+- federation-policy version.
+
+Do not log raw tokens, private keys, authorization codes, DPoP proofs,
+delegation signatures, or unnecessary personal data. A “request authorized”
+event is not proof that a downstream effect completed. Record effect receipts
+from the system of record separately.
+
+Operational metrics include trust-resolution latency, chain cache age, unknown
+key IDs, metadata-policy conflicts, bundle/JWKS refresh errors, mix-up attempts,
+denials by reason, partner offboarding propagation, valid work blocked, and
+invalid requests allowed.
+
+## 12. Evaluation
+
+The lab contains one valid scenario and 45 labelled denials across trust chain,
+metadata policy, token, workload, delegation, MCP/OAuth, lifecycle, and local
+policy.
 
 ```text
-bootstrap
-endpoint authentication
-bundle refresh
-key rotation
-redirect handling
-relationship termination
+invalid_allow_rate = invalid cases allowed / invalid cases
+valid_block_rate   = valid cases denied / valid cases
+accuracy           = matching labels / all labelled cases
 ```
 
-Federation configuration itself is security-sensitive.
-
----
-
-# 20. Key rotation across domains
-
-Foreign keys will change.
-
-Your system must support:
+Release gate:
 
 ```text
-overlapping old/new keys
-bundle/JWKS refresh
-cache expiry
-rollback handling
-unknown key ID behavior
+cases >= 30
+invalid allows == 0
+valid blocks == 0
+accuracy == 1.0
 ```
 
-Do not hard-code a single forever-key.
+This gate validates declared invariants, not Internet-scale interoperability.
+Production assurance also requires official conformance tests, parser fuzzing,
+network and redirect tests, multiple valid-chain selection, latency/load tests,
+key and bundle rotation drills, restart and cache consistency, and partner
+incident exercises.
 
----
+## 13. Lab map
 
-# 21. Federation termination
+| Artifact | Purpose |
+|---|---|
+| `advanced_03_cross_domain_federation.ipynb` | executed learner journey and failure analysis |
+| `lab.py` | canonical reference implementation and labelled corpus |
+| `advanced_federation_runtime.py` | collision-safe import facade |
+| `data/trust_registry.json` | locally governed relationship example |
+| `configs/mcp/protected-resource-metadata.json` | RFC 9728 resource metadata example |
+| `configs/spiffe/federation-example.yaml` | bundle endpoint plus separate application policy example |
+| `tests/test_federation_runtime.py` | cryptographic, policy, property, SDK, and integration tests |
 
-Offboarding a partner must remove trust, not just disable a UI integration.
+Run locally:
 
-Consider:
-
-```text
-remove federation relationship
-remove foreign trust bundle/anchor
-revoke local mappings
-invalidate cached ALLOW decisions
-terminate delegated capabilities
-disable MCP/API clients
-preserve audit evidence
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python lab.py
+python -m pytest tests -q
 ```
 
----
-
-# 22. Authentication federation ≠ authorization federation
-
-SPIFFE federation may prove:
-
-```text
-this workload is
-spiffe://partner.example/agent/research
-```
-
-It does not prove:
-
-```text
-this workload may read claim:483
-```
-
-That remains a local authorization decision.
-
----
-
-# 23. Policy interoperability
-
-Different domains may use:
-
-```text
-RBAC
-ReBAC
-ABAC
-Cedar
-OPA
-cloud IAM
-proprietary policy
-```
-
-Do not assume foreign role names have local meaning.
-
-Bad:
-
-```text
-foreign role = "admin"
-→ local admin
-```
-
-Instead exchange stable, intentionally defined claims/capabilities and map them through local policy.
-
----
-
-# 24. Cross-domain delegation
-
-Suppose:
-
-```text
-Alice
-  → corp claims agent
-  → partner research agent
-```
-
-The foreign delegation should constrain:
-
-```text
-target domain
-agent identity
-actions
-resources
-purpose/task
-expiry
-redelegation
-audience
-```
-
-The partner should independently validate the delegation and apply its own policy.
-
----
-
-# 25. Authority intersection
-
-A useful model is:
-
-```text
-effective foreign authority =
-verified foreign identity
-∩ valid delegation
-∩ federation agreement
-∩ local policy
-∩ resource policy
-∩ current risk
-```
-
-No single foreign assertion should dominate the result.
-
----
-
-# 26. Third-party agents
-
-Treat an external agent as a non-human third-party principal.
-
-Registration should capture:
-
-```text
-provider
-issuer/trust domain
-agent identifier
-owner/contact
-business purpose
-risk tier
-approved tools/resources
-delegation policy
-credential types
-assurance requirements
-review date
-```
-
----
-
-# 27. Trust registry
-
-A local trust registry can record approved external identity authorities and constraints.
-
-Example:
-
-```json
-{
-  "issuer": "https://id.partner.example",
-  "status": "active",
-  "accepted_audiences": ["claims-mcp"],
-  "max_ttl": 600,
-  "required_algorithms": ["ES256"],
-  "allowed_agent_types": ["research"]
-}
-```
-
-This is policy data, not model context.
-
----
-
-# 28. Discovery vs trust
-
-Discovery tells you:
-
-```text
-where metadata or keys are
-```
-
-It does not automatically tell you:
-
-```text
-whether to trust them
-```
-
-This distinction is crucial in OpenID/OAuth/MCP federation.
-
----
-
-# 29. MCP authorization discovery
-
-Current MCP authorization uses OAuth Protected Resource Metadata.
-
-An MCP server advertises its associated authorization server(s), and clients discover authorization-server metadata through OAuth AS Metadata or OIDC Discovery.
-
-This supports interoperable authorization setup.
-
----
-
-# 30. MCP cross-domain trust
-
-A remote MCP server creates several trust boundaries:
-
-```text
-agent client
-MCP server
-authorization server
-downstream APIs
-tool provider
-```
-
-Verify each relationship.
-
-Do not assume:
-
-```text
-trusted MCP server = trusted downstream API
-```
-
-or:
-
-```text
-valid OAuth server = locally approved issuer
-```
-
----
-
-# 31. Multiple authorization servers
-
-Protected Resource Metadata can identify multiple authorization servers.
-
-Client/server policy must define which are acceptable.
-
-Never choose an authorization server solely because metadata names it.
-
----
-
-# 32. Resource indicators
-
-Use resource/audience binding so a credential intended for:
-
-```text
-https://partner.example/mcp
-```
-
-cannot be replayed at:
-
-```text
-https://corp.example/payments
-```
-
-Cross-domain systems magnify token-redirection risk.
-
----
-
-# 33. Token passthrough
-
-An MCP server must not take a client token and blindly pass it to downstream services.
-
-Across organizational boundaries this is especially dangerous.
-
-Use:
-
-```text
-client → MCP-specific credential
-MCP → downstream-specific credential
-```
-
----
-
-# 34. Identity translation gateways
-
-Sometimes legacy systems cannot consume federated identities directly.
-
-An identity gateway may translate:
-
-```text
-external verified identity
-        ↓
-local short-lived credential
-```
-
-Requirements:
-
-```text
-preserve original issuer/subject in evidence
-narrow scope
-short lifetime
-target audience
-no privilege expansion
-policy-controlled mapping
-```
-
----
-
-# 35. Trust transitivity
-
-Avoid accidental logic:
-
-```text
-A trusts B
-B trusts C
-therefore A trusts C
-```
-
-Trust is not automatically transitive.
-
-OpenID Federation supports explicit trust-chain construction under configured trust anchors and policies; that is very different from arbitrary social transitivity.
-
----
-
-# 36. Federation graph
-
-Model trust as a directed graph.
-
-Nodes:
-
-```text
-organizations
-issuers
-trust anchors
-workload trust domains
-agents
-authorization servers
-MCP servers
-```
-
-Edges:
-
-```text
-trusts
-federates_with
-issues_for
-authorizes
-delegates_to
-```
-
-Graph analysis can expose unintended paths.
-
----
-
-# 37. Namespace collision
-
-Two domains can both issue:
-
-```text
-agent:research
-```
-
-Never collapse them.
-
-Use:
-
-```text
-partnerA::agent:research
-partnerB::agent:research
-```
-
-or an equivalent structured identity.
-
----
-
-# 38. Malicious issuer
-
-A technically valid token from an unapproved issuer must fail.
-
-Test:
-
-```text
-signature valid
-claims plausible
-issuer unknown
-```
-
-Expected:
-
-```text
-DENY
-```
-
----
-
-# 39. Trust-chain substitution
-
-Attackers may try to substitute:
-
-```text
-different trust anchor
-different federation authority
-different bundle endpoint
-different issuer metadata
-```
-
-Pin policy to explicitly accepted anchors and verify the complete chain.
-
----
-
-# 40. Metadata poisoning
-
-Treat federation metadata as security-critical input.
-
-Validate:
-
-```text
-signatures
-issuer relationships
-allowed algorithms
-URLs
-policy constraints
-expiry
-```
-
-Avoid unsafe automatic adoption of newly advertised endpoints or capabilities.
-
----
-
-# 41. Redirect attacks
-
-Federation and bundle discovery can involve HTTP redirects.
-
-Apply the relevant specification's validation rules after redirects and preserve expected endpoint identity.
-
-Do not downgrade authentication requirements because a URL changed.
-
----
-
-# 42. Algorithm confusion/downgrade
-
-Federation policy should constrain acceptable cryptographic algorithms.
-
-Do not allow an external party to weaken local algorithm requirements via metadata.
-
----
-
-# 43. Stale federation state
-
-Cached:
-
-```text
-JWKS
-SPIFFE bundles
-entity statements
-trust chains
-authorization-server metadata
-trust marks
-```
-
-can become stale.
-
-Define TTL, refresh, stale-on-error behavior and high-risk freshness requirements.
-
----
-
-# 44. Revocation latency
-
-Cross-domain revocation is harder because state propagates through caches and organizational boundaries.
-
-Define measurable targets:
-
-```text
-partner removal → no new authentication within X minutes
-agent quarantine → no sensitive authorization within Y seconds
-key compromise → emergency refresh immediately
-```
-
----
-
-# 45. Fail-open risk
-
-If foreign metadata cannot refresh:
-
-```text
-should we continue using cached trust?
-```
-
-Answer by risk tier.
-
-For sensitive writes, fail closed or require a bounded, explicitly approved stale window.
-
----
-
-# 46. Federation evidence
-
-Record:
-
-```text
-foreign issuer
-foreign subject
-trust domain
-trust anchor
-trust-chain ID
-metadata version/hash
-credential key ID
-audience/resource
-delegation chain
-local mapped principal
-local policy decision
-federation-policy version
-MCP server/auth server
-trace/task IDs
-```
-
-This lets investigators reconstruct *why* a foreign agent was trusted.
-
----
-
-# 47. Enterprise architecture
-
-```text
-                ┌──────────────────────────┐
-                │ Local Trust Registry     │
-                │ anchors / issuers/policy │
-                └────────────┬─────────────┘
-                             │
-External Identity ──► Federation Verifier
- OIDC / SPIFFE         │   │   │
- OpenID Federation     │   │   └─ metadata/trust chain
-                       │   └───── keys/bundles
-                       └───────── credential
-                             │
-                             ▼
-                    Federated Principal
-                             │
-              ┌──────────────┼──────────────┐
-              ▼              ▼              ▼
-          Delegation       ReBAC        Runtime ABAC
-              └──────────────┼──────────────┘
-                             ▼
-                       Local PDP
-                    OPA / Cedar / etc.
-                             ▼
-                            PEP
-                             ▼
-                     MCP / API / Tool
-                             ▼
-                     Evidence / Audit
-```
-
----
-
-# 48. Design principle
-
-> **Federate authentication carefully; keep authorization local, explicit, scoped, and revocable.**
-
-A foreign domain can prove who its agent is.
-
-It should not get to decide what that agent may do inside your domain.
-
----
-
-# Practical notebook
-
-The notebook builds:
-
-1. domain-qualified identities;
-2. trust registries;
-3. issuer allowlists;
-4. compound foreign principals;
-5. directed federation graphs;
-6. trust-chain validation;
-7. metadata-policy application;
-8. trust-mark policy;
-9. SPIFFE trust-domain/bundle binding;
-10. directional federation;
-11. key rotation;
-12. foreign workload validation;
-13. local authorization after federation;
-14. cross-domain delegation;
-15. authority intersection;
-16. third-party agent onboarding;
-17. MCP Protected Resource Metadata;
-18. authorization-server selection policy;
-19. resource/audience validation;
-20. identity translation;
-21. namespace-collision attacks;
-22. malicious issuer attacks;
-23. trust-chain substitution;
-24. stale metadata;
-25. federation termination;
-26. evidence;
-27. end-to-end partner-agent scenario.
-
-# References
-
-- OpenID Federation 1.0 Final  
-  https://openid.net/specs/openid-federation-1_0.html
-- OpenID Federation 1.0 Final approval  
-  https://openid.net/openid-federation-1-0-final-specification-approved/
-- SPIFFE Trust Domain and Bundle  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe_trust_domain_and_bundle/
-- SPIFFE Federation  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/
-- SPIFFE ID  
-  https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/
-- MCP Authorization  
-  https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
-- RFC 8414 — OAuth Authorization Server Metadata  
-  https://www.rfc-editor.org/rfc/rfc8414
-- RFC 9728 — OAuth Protected Resource Metadata  
-  https://www.rfc-editor.org/rfc/rfc9728
-- RFC 8707 — OAuth Resource Indicators  
-  https://www.rfc-editor.org/rfc/rfc8707
-
-# Next course
-
-## Advanced 04 — Agent Attestations, Verifiable Credentials & Trust Evidence
-
-Next we move from federation to portable evidence about agents: verifiable credentials, attestations, workload/software claims, agent cards/system cards, trust marks, selective disclosure, issuer/verifier models, provenance, and policy use of assurance evidence.
+## 14. Production upgrade path
+
+| Training shortcut | Production replacement |
+|---|---|
+| deterministic Ed25519 keys | KMS/HSM-backed keys, rotation state, key provenance |
+| pre-fetched JWT strings | bounded network fetcher with SSRF/redirect/TLS controls |
+| partial metadata operators | complete compliant OpenID Federation implementation |
+| one candidate chain | discover, validate, and deterministically select among chains |
+| synthetic X.509-SVID | SPIRE Workload API, automated SVID and bundle rotation |
+| pinned fingerprint in JSON | protected federation configuration and audited rollout |
+| in-memory OAuth transaction | encrypted durable, atomic, expiring transaction store |
+| custom delegation envelope | reviewed capability/token-exchange profile |
+| static local policy facts | authenticated, versioned relationship/resource/risk services |
+| in-process evidence list | append-only privacy-governed telemetry and effect receipts |
+| fixed case set | incidents, mutations, conformance, fuzz, load, and chaos suites |
+
+Separate control-plane and data-plane availability. Cache only validated
+artifacts until their bounded expiry. Protect against stampedes. Define unknown
+key behavior, emergency refresh, rollback, and stale-on-error by risk tier.
+Reauthorize on delayed effects and after any identity, delegation, relationship,
+resource, or policy version changes.
+
+## 15. State of the art
+
+### Established
+
+- issuer/audience/time/signature validation, OAuth metadata, PKCE, and mix-up
+  defenses from current OAuth BCP;
+- workload federation with short-lived identities and rotating bundles;
+- explicit local policy after federated authentication; and
+- namespace-qualified principal mapping and governed partner lifecycle.
+
+### Newly standardized and rapidly maturing
+
+- OpenID Federation 1.0 is a 2026 Final Specification. Its trust-chain and
+  metadata-policy model is standardized, while deployment experience,
+  conformance tooling, and library coverage are still growing relative to OIDC;
+- MCP 2026-07-28 strengthens issuer validation and issuer-bound client
+  credentials for its many-server authorization setting.
+
+### Emerging and open problems
+
+- interoperable identity and delegation profiles for autonomous agents;
+- portable assurance without converting trust marks into ambient authority;
+- revocation and emergency offboarding across organizational caches;
+- privacy-preserving cross-domain correlation and audit;
+- safe automated trust discovery without configuration poisoning; and
+- consistent policy semantics across heterogeneous organizations.
+
+## 16. Exercises
+
+1. Add a second valid trust chain and implement deterministic selection policy.
+2. Add the full OpenID Federation `value`, `add`, and `default` operators with
+   conflict tests; compare your behavior with a conformant implementation.
+3. Model planned SPIFFE bundle rotation with old/new overlap and prove there is
+   neither unauthorized acceptance nor an availability gap.
+4. Add an OAuth transaction expiry and concurrent double-completion test.
+5. Implement a signed trust mark, then prove that it contributes one attribute
+   without granting an action directly.
+6. Add a brokered local credential and verify it is narrower and retains source
+   evidence.
+7. Define fail behavior for read-only research, claim updates, and payments.
+8. Design an offboarding drill with measurable cache and authorization SLOs.
+
+## 17. Review questions
+
+1. Why is the final entity statement's issuer—not subject—the trust anchor in
+   this chain shape?
+2. Why must metadata policy be resolved before using discovered endpoints?
+3. What does an X.509-SVID prove, and which business facts does it not prove?
+4. How does preserving `(issuer, subject)` prevent namespace collision?
+5. Why is an authorization server advertised by an MCP resource not
+   automatically acceptable?
+6. Which state must be invalidated when a partner is suspended?
+
+## Primary references
+
+- OpenID Foundation, [OpenID Federation 1.0 Final](https://openid.net/specs/openid-federation-1_0.html)
+- OpenID Foundation, [Final Specification approval announcement](https://openid.net/openid-federation-1-0-final-specification-approved/)
+- SPIFFE, [SPIFFE Identity and Verifiable Identity Document](https://spiffe.io/docs/latest/spiffe-specs/spiffe-id/)
+- SPIFFE, [SPIFFE Trust Domain and Bundle](https://spiffe.io/docs/latest/spiffe-specs/spiffe_trust_domain_and_bundle/)
+- SPIFFE, [SPIFFE Federation](https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/)
+- IETF, [OAuth 2.0 Authorization Server Metadata (RFC 8414)](https://www.rfc-editor.org/rfc/rfc8414)
+- IETF, [OAuth 2.0 Authorization Server Issuer Identification (RFC 9207)](https://www.rfc-editor.org/rfc/rfc9207)
+- IETF, [OAuth 2.0 Security Best Current Practice (RFC 9700)](https://www.rfc-editor.org/rfc/rfc9700)
+- IETF, [OAuth 2.0 Protected Resource Metadata (RFC 9728)](https://www.rfc-editor.org/rfc/rfc9728)
+- IETF, [OAuth 2.0 Resource Indicators (RFC 8707)](https://www.rfc-editor.org/rfc/rfc8707)
+- Model Context Protocol, [2026-07-28 specification](https://modelcontextprotocol.io/specification/2026-07-28)
+- [PyJWT documentation](https://pyjwt.readthedocs.io/)
+- [cryptography X.509 documentation](https://cryptography.io/en/latest/x509/)
+- [NetworkX documentation](https://networkx.org/documentation/stable/)
+
+## Next course
+
+Advanced 04 moves from federation to portable evidence about agents:
+attestations, verifiable credentials, assurance signals, trust evidence,
+revocation, selective disclosure, and policy use of claims.
