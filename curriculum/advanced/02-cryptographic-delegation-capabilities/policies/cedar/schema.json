@@ -1,0 +1,26 @@
+{
+  "": {
+    "entityTypes": {
+      "Agent": {"memberOfTypes": [], "shape": {"type": "Record", "attributes": {"tenantId": {"type": "String", "required": true}}, "additionalAttributes": false}},
+      "Claim": {"memberOfTypes": [], "shape": {"type": "Record", "attributes": {"tenantId": {"type": "String", "required": true}}, "additionalAttributes": false}}
+    },
+    "commonTypes": {
+      "CapabilityContext": {
+        "type": "Record",
+        "attributes": {
+          "proofValid": {"type": "Boolean", "required": true}, "attenuationValid": {"type": "Boolean", "required": true},
+          "dpopValid": {"type": "Boolean", "required": true}, "replayConsumed": {"type": "Boolean", "required": true},
+          "capabilityCurrent": {"type": "Boolean", "required": true}, "policyVersionCurrent": {"type": "Boolean", "required": true},
+          "subjectBound": {"type": "Boolean", "required": true}, "tenantBound": {"type": "Boolean", "required": true},
+          "taskBound": {"type": "Boolean", "required": true}, "audienceBound": {"type": "Boolean", "required": true},
+          "actionBound": {"type": "Boolean", "required": true}, "resourceBound": {"type": "Boolean", "required": true},
+          "toolBound": {"type": "Boolean", "required": true}, "purposeBound": {"type": "Boolean", "required": true},
+          "workloadApproved": {"type": "Boolean", "required": true}, "relationshipValid": {"type": "Boolean", "required": true},
+          "riskScore": {"type": "Long", "required": true}
+        },
+        "additionalAttributes": false
+      }
+    },
+    "actions": {"SearchKnowledge": {"appliesTo": {"principalTypes": ["Agent"], "resourceTypes": ["Claim"], "context": {"type": "CapabilityContext"}}}}
+  }
+}
