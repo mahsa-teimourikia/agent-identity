@@ -1,50 +1,42 @@
 [
-  {
-    "case": "forged_high_risk_event",
-    "expected": "reject transmitter"
-  },
-  {
-    "case": "forged_low_risk_recovery",
-    "expected": "reject transmitter"
-  },
-  {
-    "case": "duplicate_revocation",
-    "expected": "idempotent"
-  },
-  {
-    "case": "old_high_after_new_low",
-    "expected": "reject stale event"
-  },
-  {
-    "case": "event_flood",
-    "expected": "backpressure"
-  },
-  {
-    "case": "stream_outage_sensitive_write",
-    "expected": "step_up_or_deny"
-  },
-  {
-    "case": "risk_threshold_flapping",
-    "expected": "hysteresis"
-  },
-  {
-    "case": "queued_write_after_quarantine",
-    "expected": "reauthorize_and_deny"
-  },
-  {
-    "case": "cached_allow_after_revocation",
-    "expected": "invalidate"
-  },
-  {
-    "case": "cross_tenant_subject_confusion",
-    "expected": "reject"
-  },
-  {
-    "case": "agent_gaming_detector",
-    "expected": "independent enforcement"
-  },
-  {
-    "case": "quarantine_then_fake_recovery",
-    "expected": "recovery controls"
-  }
+  {"case_id": "valid_update", "category": "valid", "expected": "allow"},
+  {"case_id": "valid_moderate_read", "category": "valid", "expected": "allow"},
+  {"case_id": "valid_duplicate_delivery", "category": "valid", "expected": "allow"},
+  {"case_id": "session_revoked", "category": "lifecycle", "expected": "block"},
+  {"case_id": "credential_revoked", "category": "lifecycle", "expected": "block"},
+  {"case_id": "workload_untrusted", "category": "workload", "expected": "block"},
+  {"case_id": "task_inactive", "category": "governance", "expected": "block"},
+  {"case_id": "relationship_inactive", "category": "governance", "expected": "block"},
+  {"case_id": "agent_quarantined", "category": "negative-evidence", "expected": "block"},
+  {"case_id": "critical_threat", "category": "risk", "expected": "block"},
+  {"case_id": "high_behavior", "category": "risk", "expected": "block"},
+  {"case_id": "high_identity", "category": "risk", "expected": "block"},
+  {"case_id": "high_workload", "category": "risk", "expected": "block"},
+  {"case_id": "high_transaction", "category": "risk", "expected": "block"},
+  {"case_id": "device_noncompliant", "category": "workload", "expected": "block"},
+  {"case_id": "wrong_tenant", "category": "binding", "expected": "block"},
+  {"case_id": "wrong_agent", "category": "binding", "expected": "block"},
+  {"case_id": "wrong_workload", "category": "binding", "expected": "block"},
+  {"case_id": "wrong_session", "category": "binding", "expected": "block"},
+  {"case_id": "wrong_action", "category": "authority", "expected": "block"},
+  {"case_id": "wrong_resource", "category": "authority", "expected": "block"},
+  {"case_id": "policy_version_stale", "category": "governance", "expected": "block"},
+  {"case_id": "task_version_stale", "category": "governance", "expected": "block"},
+  {"case_id": "relationship_version_stale", "category": "governance", "expected": "block"},
+  {"case_id": "token_claims_changed", "category": "identity", "expected": "block"},
+  {"case_id": "stream_unavailable", "category": "resilience", "expected": "block"},
+  {"case_id": "stream_stale", "category": "resilience", "expected": "block"},
+  {"case_id": "restrictive_backlog", "category": "resilience", "expected": "block"},
+  {"case_id": "stale_relaxation", "category": "ordering", "expected": "block"},
+  {"case_id": "late_restriction", "category": "ordering", "expected": "block"},
+  {"case_id": "fake_recovery_source", "category": "recovery", "expected": "block"},
+  {"case_id": "recovery_without_human", "category": "recovery", "expected": "block"},
+  {"case_id": "recovery_without_incident_clearance", "category": "recovery", "expected": "block"},
+  {"case_id": "recovery_without_attestation", "category": "recovery", "expected": "block"},
+  {"case_id": "recovery_cooldown", "category": "recovery", "expected": "block"},
+  {"case_id": "moderate_write_reduced", "category": "risk", "expected": "block"},
+  {"case_id": "risk_signal_stale", "category": "freshness", "expected": "block"},
+  {"case_id": "risk_dimensions_incomplete", "category": "freshness", "expected": "block"},
+  {"case_id": "claims_state_inactive", "category": "identity", "expected": "block"},
+  {"case_id": "subject_unresolved", "category": "correlation", "expected": "block"}
 ]
