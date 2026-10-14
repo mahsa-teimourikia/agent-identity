@@ -1,19 +1,21 @@
 {
-  "low": [
-    "owner"
-  ],
-  "medium": [
-    "owner",
-    "platform"
-  ],
-  "high": [
-    "owner",
-    "security"
-  ],
-  "critical": [
-    "owner",
-    "security",
-    "risk",
-    "business_authority"
-  ]
+  "policy_version": "governance-2026-10",
+  "risk_tiers": {
+    "low": ["owner"],
+    "medium": ["owner", "platform"],
+    "high": ["owner", "security"],
+    "critical": ["owner", "security", "risk", "business_authority"]
+  },
+  "receipt_profile": {
+    "algorithm": "EdDSA",
+    "audience": "urn:northstar:agent-governance",
+    "maximum_lifetime_seconds": 900,
+    "bindings": ["approver", "role", "tenant", "proposal_digest", "policy_version", "decision", "jti"]
+  },
+  "invariants": {
+    "requester_may_approve": false,
+    "distinct_approvers": true,
+    "single_use_receipts": true,
+    "optimistic_lifecycle_version": true
+  }
 }

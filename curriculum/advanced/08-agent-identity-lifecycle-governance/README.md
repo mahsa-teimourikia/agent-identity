@@ -28,6 +28,59 @@ The central principle is:
 
 > **An identity that cannot be inventoried, owned, reviewed, changed, revoked, and evidenced is not enterprise-ready.**
 
+## What you will build
+
+You are the platform team for **Northstar Mutual**, where a high-risk claims agent may read restricted claim files and draft adjuster notes but must never approve a payout. You will build the governance control plane around that agent:
+
+```text
+versioned proposal
+    → JSON Schema validation and onboarding gates
+    → role-qualified, Ed25519-signed approval receipts
+    → atomic activation in a durable SQLite registry
+    → tenant + workload + action + resource + purpose authorization
+    → continuous signals, recertification, suspension, quarantine, retirement
+    → hash-chained lifecycle evidence and control metrics
+```
+
+The lab is deliberately **credential-free and offline**. It uses common Python libraries—PyJWT, `cryptography`, `jsonschema`, SQLite, pandas, and pytest—while keeping the security decisions visible enough to audit. It does not call an LLM because lifecycle governance must remain deterministic even when a model is unavailable or compromised.
+
+### Run the course
+
+From this course directory:
+
+```bash
+python -m pip install -r requirements.txt
+python lab.py
+python -m pytest -q
+jupyter nbconvert --execute --to notebook --inplace advanced_08_identity_lifecycle_governance.ipynb
+```
+
+Expected release gate:
+
+```text
+hardened:            27/27 correct, 0 invalid allows, 0 valid blocks
+state-only baseline: 20 invalid allows
+test suite:          54 focused tests
+```
+
+The weak baseline treats `state == active` as sufficient. The hardened path proves why active state alone is not authorization: exact tenant, workload, action, resource, purpose, policy version, credential state, and review currency must all still hold.
+
+## Security invariants
+
+The executable lab enforces these non-negotiable properties:
+
+1. a proposal is schema-valid, owned, sponsored, monitored, evaluated, least-privileged, and bound to the governed SPIFFE trust domain before persistence;
+2. every approval is signed, short-lived, single-use, and bound to the exact proposal digest, tenant, policy version, approver identity, and registered role;
+3. high-risk activation needs distinct owner and security approvers, neither of whom may be the requester;
+4. activation and lifecycle changes use transactions, idempotency keys, and optimistic versions so retries and races cannot duplicate or bypass controls;
+5. owner departure, credential compromise, material authority change, or loss of monitoring removes runtime authority immediately;
+6. retirement is terminal in this teaching model, credentials are disabled, and evidence remains available;
+7. every lifecycle event is chained to its predecessor so silent history edits are detectable.
+
+## Scope and production boundary
+
+This course demonstrates control semantics, not a production identity platform. In production, replace deterministic teaching keys with HSM/KMS-backed keys; SQLite with a highly available registry and transactional outbox; local role registration with workforce identity and privileged-access management; prefix matching with a real policy decision point; the local event chain with an append-only/WORM evidence sink plus trusted time; and the in-process signal handler with authenticated Shared Signals, cloud events, or equivalent. The lab does not claim that a hash chain prevents deletion, that approval alone satisfies a regulation, or that one risk score replaces multidisciplinary review.
+
 ---
 
 # Learning outcomes
@@ -1472,52 +1525,7 @@ Metrics/reporting enabled?
 
 # Practical notebook
 
-The notebook implements:
-
-1. inventory schema;
-2. identity taxonomy;
-3. ownership checks;
-4. risk tiering;
-5. lifecycle states;
-6. state transitions;
-7. registration;
-8. onboarding;
-9. approval routing;
-10. segregation of duties;
-11. identity manifests;
-12. policy-as-code;
-13. CI/CD gates;
-14. provisioning;
-15. least-privilege analysis;
-16. delegation governance;
-17. sub-agent registration;
-18. runtime binding;
-19. drift detection;
-20. privilege drift;
-21. posture scoring;
-22. critical-control overrides;
-23. scheduled recertification;
-24. event-driven review;
-25. change management;
-26. material-change detection;
-27. exceptions;
-28. exception expiry;
-29. owner departure;
-30. decommissioning;
-31. third-party agents;
-32. supply-chain identity;
-33. federation review;
-34. identity events;
-35. evidence generation;
-36. audit reconstruction;
-37. quarantine;
-38. incident response;
-39. identity KPIs/KRIs;
-40. Mean Time to Revoke;
-41. identity debt;
-42. governance dashboard dataset;
-43. governance control tests;
-44. enterprise lifecycle capstone.
+The notebook follows one system end to end rather than presenting isolated fragments. It inspects the proposal and JSON Schema, registers it, examines real signed approval receipts, activates it transactionally, exercises runtime authorization, injects governance failures, checks recertification and retirement, verifies the audit chain, compares the hardened design with the state-only baseline, and turns the adversarial corpus into a release decision. The same `lab.py` implementation is imported by both the notebook and pytest suite, preventing documentation-only security claims from drifting away from executable behavior.
 
 ---
 
@@ -1525,7 +1533,7 @@ The notebook implements:
 
 ## NIST software and AI agent identity
 
-In February 2026, NIST NCCoE published the concept paper **Accelerating the Adoption of Software and Artificial Intelligence Agent Identity and Authorization**.
+In February 2026, NIST NCCoE released the **initial public draft** concept paper *Accelerating the Adoption of Software and Artificial Intelligence Agent Identity and Authorization*. Its comment period closed on April 2, 2026; it is a useful direction-of-travel document, not a final standard.
 
 It focuses on applying identity standards and best practices to agentic architectures and explicitly highlights:
 
@@ -1539,6 +1547,14 @@ prompt-injection-related controls
 ```
 
 This is an important signal that agent identity is becoming a distinct enterprise security architecture concern.
+
+## NIST AI RMF and Generative AI Profile
+
+NIST AI RMF 1.0 organizes voluntary AI risk management around **Govern, Map, Measure, and Manage**. NIST AI 600-1 applies that lifecycle framing to generative AI. This course maps the governance layer to concrete identity controls—accountability, inventory, approval, measurement, incident response, and decommissioning—but does not imply that passing this lab establishes AI RMF conformity. NIST's AI Resource Center notes that AI RMF 1.0 is being revised, so production programs should track the current publication rather than freeze this course's mapping.
+
+https://airc.nist.gov/
+
+https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf
 
 ## NIST SP 800-207
 
@@ -1562,6 +1578,8 @@ These standards provide foundations for exchanging security events and continuou
 
 https://openid.net/three-shared-signals-final-specifications-approved/
 
+The lab's local signals model the control-plane effect of an authenticated event; it does not implement Shared Signals transport or claim CAEP interoperability.
+
 ## SLSA
 
 SLSA provides software supply-chain integrity guidance that can complement runtime agent identity.
@@ -1574,6 +1592,24 @@ OWASP's Non-Human Identities work is useful for understanding operational risks 
 
 https://owasp.org/www-project-non-human-identities-top-10/
 
+## EU AI Act
+
+Regulation (EU) 2024/1689 is risk- and role-specific, and its application dates have changed through subsequent amendments. As of this course review on **2026-10-14**, the consolidated official text says the Regulation generally applies from August 2, 2026, while certain high-risk provisions apply later. Determine whether a concrete agent system is in scope with qualified legal and compliance professionals. Inventory, logs, human accountability, change control, and post-market monitoring can support an evidence program, but this course is not legal advice and is not a compliance certification.
+
+https://eur-lex.europa.eu/eli/reg/2024/1689
+
+## Tooling choices and alternatives
+
+| Concern | Lab choice | Common production alternatives | Why the distinction matters |
+|---|---|---|---|
+| Proposal contract | JSON Schema 2020-12 + `jsonschema` | OpenAPI, Pydantic, Protobuf | Schema validity is necessary but does not establish approval or safety. |
+| Approval receipt | Ed25519 JWT via PyJWT/`cryptography` | OIDC/JWS services, cloud KMS, HSM-backed signing | A signature must be coupled to trusted issuer, role, context, expiry, and replay checks. |
+| Registry | transactional SQLite | PostgreSQL, service catalog, identity-governance platform | Durable state needs concurrency, backup, availability, and migration design. |
+| Workload binding | SPIFFE-style identifier | SPIRE, cloud workload identity, Kubernetes projected tokens | The identifier must be verified at runtime, not copied from request text. |
+| Policy examples | OPA/Rego and Cedar | cloud IAM, Zanzibar-style engines, OpenFGA, proprietary PDPs | Engine choice does not remove the need for fail-closed inputs and policy tests. |
+| Continuous signals | in-process event mapping | OpenID Shared Signals/CAEP/RISC, cloud event buses | Production signals need authenticated delivery, replay defense, ordering strategy, and recovery. |
+| Evidence | SHA-256 hash chain | transparency log, ledger, signed/WORM audit store | Chaining detects edits when an anchor survives; it does not stop deletion by itself. |
+
 ---
 
 # References
@@ -1582,6 +1618,10 @@ https://owasp.org/www-project-non-human-identities-top-10/
   https://www.nccoe.nist.gov/projects/software-and-ai-agent-identity-and-authorization
 - NIST — 2026 Agent Identity Concept Paper  
   https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd
+- NIST — AI Risk Management Framework 1.0
+  https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf
+- NIST — AI RMF Generative AI Profile (NIST AI 600-1)
+  https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf
 - NIST SP 800-207 — Zero Trust Architecture  
   https://csrc.nist.gov/pubs/sp/800/207/final
 - SPIFFE Standard  
@@ -1596,6 +1636,8 @@ https://owasp.org/www-project-non-human-identities-top-10/
   https://slsa.dev/
 - OWASP Non-Human Identities Top 10  
   https://owasp.org/www-project-non-human-identities-top-10/
+- European Union — Regulation (EU) 2024/1689, consolidated text
+  https://eur-lex.europa.eu/eli/reg/2024/1689
 
 ---
 

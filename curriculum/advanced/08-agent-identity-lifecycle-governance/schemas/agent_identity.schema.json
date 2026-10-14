@@ -1,65 +1,42 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Governed Agent Identity",
+  "$id": "https://northstar.example/schemas/governed-agent-identity.json",
+  "title": "Governed agent identity proposal",
   "type": "object",
+  "additionalProperties": false,
   "required": [
-    "id",
-    "name",
-    "owner",
-    "purpose",
-    "environment",
-    "risk_tier",
-    "status"
+    "agent_id", "tenant_id", "owner", "sponsor", "requester", "purpose",
+    "risk_tier", "data_classification", "requested_actions", "resource_prefixes",
+    "environment", "workload_id", "artifact_digest", "model_id", "policy_version",
+    "monitoring_enabled", "evals_passed", "short_lived_credentials",
+    "credential_ttl_seconds", "review_interval_days"
   ],
   "properties": {
-    "id": {
-      "type": "string"
+    "agent_id": {"type": "string", "pattern": "^agent:[a-z0-9-]+:v[0-9]+$"},
+    "tenant_id": {"type": "string", "pattern": "^tenant:[a-z0-9-]+$"},
+    "owner": {"type": "string", "minLength": 1},
+    "sponsor": {"type": "string", "minLength": 1},
+    "requester": {"type": "string", "minLength": 1},
+    "purpose": {"type": "string", "minLength": 20},
+    "risk_tier": {"enum": ["low", "medium", "high", "critical"]},
+    "data_classification": {"enum": ["public", "internal", "confidential", "restricted"]},
+    "requested_actions": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z]+[a-z0-9.-]*$"}
     },
-    "name": {
-      "type": "string"
+    "resource_prefixes": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^/"}
     },
-    "owner": {
-      "type": "string",
-      "minLength": 1
-    },
-    "purpose": {
-      "type": "string",
-      "minLength": 1
-    },
-    "environment": {
-      "enum": [
-        "dev",
-        "test",
-        "stage",
-        "prod"
-      ]
-    },
-    "risk_tier": {
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "critical"
-      ]
-    },
-    "status": {
-      "enum": [
-        "draft",
-        "pending_approval",
-        "approved",
-        "active",
-        "suspended",
-        "quarantined",
-        "retired",
-        "revoked"
-      ]
-    },
-    "review_interval_days": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "delegation_allowed": {
-      "type": "boolean"
-    }
+    "environment": {"enum": ["dev", "test", "stage", "prod"]},
+    "workload_id": {"type": "string", "pattern": "^spiffe://"},
+    "artifact_digest": {"type": "string", "pattern": "^sha256:"},
+    "model_id": {"type": "string", "minLength": 1},
+    "policy_version": {"type": "string", "minLength": 1},
+    "monitoring_enabled": {"type": "boolean"},
+    "evals_passed": {"type": "boolean"},
+    "short_lived_credentials": {"type": "boolean"},
+    "credential_ttl_seconds": {"type": "integer", "minimum": 30, "maximum": 900},
+    "review_interval_days": {"type": "integer", "minimum": 1, "maximum": 365}
   }
 }

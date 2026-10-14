@@ -1,17 +1,25 @@
+// Illustrative Cedar policy. A production schema should strongly type every attribute.
 permit (
-  principal is DeploymentPipeline,
-  action == Action::"deployAgent",
-  resource is Agent
+  principal is Agent,
+  action,
+  resource is Claim
 )
 when {
-  resource.approved &&
-  resource.ownerAssigned &&
-  resource.runtimeIdentityBound &&
-  resource.monitoringEnabled &&
-  !resource.staticCredential
+  principal.state == "active" &&
+  principal.credentialActive &&
+  principal.tenant == resource.tenant &&
+  principal.workload == context.workload &&
+  principal.approvedActions.contains(action) &&
+  context.now < principal.reviewDue &&
+  context.policyVersion == principal.policyVersion
 };
 
-forbid (principal, action, resource)
+forbid (principal is Agent, action, resource)
 when {
-  resource.revoked || resource.exceptionExpired
+  principal.state == "retired" ||
+  principal.state == "quarantined" ||
+  principal.state == "suspended" ||
+  context.now >= principal.reviewDue ||
+  principal.tenant != resource.tenant ||
+  principal.workload != context.workload
 };
