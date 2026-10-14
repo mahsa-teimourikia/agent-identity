@@ -1,27 +1,26 @@
 [
   {
     "type": "owner_departed",
-    "identity": "agt-001",
-    "action": "trigger_review"
+    "agent_id": "agent:claims-investigator:v3",
+    "source": "workforce-directory",
+    "action": "suspend"
   },
   {
     "type": "credential_compromised",
-    "identity": "agt-002",
+    "agent_id": "agent:claims-investigator:v3",
+    "source": "security-operations",
     "action": "quarantine"
   },
   {
     "type": "new_write_tool",
-    "identity": "agt-003",
-    "action": "material_change_review"
+    "agent_id": "agent:claims-investigator:v3",
+    "source": "deployment-controller",
+    "action": "suspend_for_material_change_review"
   },
   {
-    "type": "review_overdue",
-    "identity": "agt-004",
-    "action": "finding"
-  },
-  {
-    "type": "exception_expired",
-    "identity": "agt-005",
-    "action": "disable_or_reapprove"
+    "type": "monitoring_disabled",
+    "agent_id": "agent:claims-investigator:v3",
+    "source": "observability-control-plane",
+    "action": "quarantine"
   }
 ]
