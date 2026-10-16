@@ -2,20 +2,77 @@ rules:
   - id: IDT-001
     name: Revoked identity used
     severity: critical
-    when: identity_status == revoked
+    kind: confirmed_control_violation
+    detector: revoked_identity
+    response: [quarantine_principal, revoke_credential]
+    attack_mapping: [ATT&CK T1078]
   - id: IDT-002
-    name: Delegation exceeds parent
+    name: Delegation exceeds parent authority
     severity: critical
-    when: delegated_scope !subset parent_scope
+    kind: confirmed_control_violation
+    detector: delegation_widening
+    response: [disable_delegation, quarantine_principal]
+    attack_mapping: [agent delegation abuse]
   - id: IDT-003
-    name: Old credential after rotation
+    name: Superseded credential used
     severity: high
-    when: credential_version != current_version
+    kind: confirmed_control_violation
+    detector: stale_credential
+    response: [revoke_credential]
+    attack_mapping: [ATT&CK T1078]
   - id: IDT-004
-    name: Human use of workload identity
+    name: Human used workload identity outside break-glass
     severity: high
-    when: human_using_nhi == true
+    kind: confirmed_control_violation
+    detector: human_use_of_nhi
+    response: [quarantine_principal, human_review]
+    attack_mapping: [OWASP NHI10:2025]
   - id: IDT-005
-    name: Telemetry suppression
+    name: Identity telemetry suppressed
     severity: critical
-    when: monitoring_disabled == true
+    kind: confirmed_control_violation
+    detector: telemetry_suppression
+    response: [quarantine_principal]
+    attack_mapping: [ATT&CK Defense Evasion]
+  - id: IDT-006
+    name: Credential audience mismatch
+    severity: critical
+    kind: confirmed_control_violation
+    detector: audience_mismatch
+    response: [revoke_credential, quarantine_principal]
+    attack_mapping: [token substitution]
+  - id: IDT-007
+    name: Cross-environment identity use
+    severity: high
+    kind: confirmed_control_violation
+    detector: cross_environment
+    response: [quarantine_principal]
+    attack_mapping: [OWASP NHI8:2025]
+  - id: IDT-008
+    name: Workload binding mismatch
+    severity: critical
+    kind: confirmed_control_violation
+    detector: workload_mismatch
+    response: [quarantine_principal, revoke_credential]
+    attack_mapping: [workload impersonation]
+  - id: IDT-009
+    name: OAuth client created after compromise
+    severity: critical
+    kind: confirmed_control_violation
+    detector: oauth_persistence
+    response: [disable_oauth_client, human_review]
+    attack_mapping: [ATT&CK T1078.004]
+  - id: IDT-010
+    name: Sender proof replayed
+    severity: critical
+    kind: confirmed_control_violation
+    detector: proof_replay
+    response: [revoke_credential, quarantine_principal]
+    attack_mapping: [credential replay]
+  - id: IDT-011
+    name: KMS signing volume anomaly
+    severity: high
+    kind: behavioral_anomaly
+    detector: kms_volume_spike
+    response: [human_review]
+    attack_mapping: [signing service abuse]

@@ -1,84 +1,90 @@
 [
   {
-    "id": "T01",
-    "scenario": "stolen agent access token",
-    "expected": [
-      "audience validation",
-      "replay/sender constraint",
-      "revocation"
-    ]
+    "id": "TD-01",
+    "scenario": "revoked research agent continues to call the claims API",
+    "signal_source": "gateway",
+    "detector": "revoked_identity_used",
+    "response": "revoke_credential",
+    "mapped_technique": "MITRE ATT&CK T1078.004 Valid Accounts: Cloud Accounts"
   },
   {
-    "id": "T02",
-    "scenario": "over-delegated sub-agent",
-    "expected": [
-      "delegation attenuation",
-      "graph detection",
-      "quarantine"
-    ]
+    "id": "TD-02",
+    "scenario": "sub-agent delegation adds claims export beyond the parent scope",
+    "signal_source": "governance",
+    "detector": "delegation_widened",
+    "response": "disable_delegation",
+    "mapped_technique": "delegation abuse"
   },
   {
-    "id": "T03",
-    "scenario": "tool-mediated lateral movement",
-    "expected": [
-      "tool identity telemetry",
-      "attack-path detection"
-    ]
+    "id": "TD-03",
+    "scenario": "stale credential remains active after governed key rotation",
+    "signal_source": "gateway",
+    "detector": "stale_credential_used",
+    "response": "revoke_credential",
+    "mapped_technique": "OWASP NHI2 Secret Leakage / NHI7 Long-Lived Secrets"
   },
   {
-    "id": "T04",
-    "scenario": "generic signing oracle",
-    "expected": [
-      "structured signing policy",
-      "KMS authorization"
-    ]
+    "id": "TD-04",
+    "scenario": "operator directly assumes a production workload identity",
+    "signal_source": "gateway",
+    "detector": "human_assumed_nhi",
+    "response": "quarantine_workload",
+    "mapped_technique": "OWASP NHI10 Human Use of NHI"
   },
   {
-    "id": "T05",
-    "scenario": "external trust compromise",
-    "expected": [
-      "federation inventory",
-      "trust suspension playbook"
-    ]
+    "id": "TD-05",
+    "scenario": "compromised agent disables identity telemetry",
+    "signal_source": "telemetry-control",
+    "detector": "telemetry_suppressed",
+    "response": "quarantine_workload",
+    "mapped_technique": "MITRE ATT&CK T1562 Impair Defenses"
   },
   {
-    "id": "T06",
-    "scenario": "human assumes NHI",
-    "expected": [
-      "identity-type signal",
-      "break-glass path"
-    ]
+    "id": "TD-06",
+    "scenario": "token minted for research is presented to the claims API",
+    "signal_source": "gateway",
+    "detector": "audience_mismatch",
+    "response": "revoke_credential",
+    "mapped_technique": "credential misuse"
   },
   {
-    "id": "T07",
-    "scenario": "telemetry suppression",
-    "expected": [
-      "telemetry health detection",
-      "fail-safe policy"
-    ]
+    "id": "TD-07",
+    "scenario": "development identity attempts a production action",
+    "signal_source": "gateway",
+    "detector": "cross_environment_access",
+    "response": "reduce_to_read_only",
+    "mapped_technique": "OWASP NHI8 Environment Isolation"
   },
   {
-    "id": "T08",
-    "scenario": "persistence via new OAuth client",
-    "expected": [
-      "identity creation detection",
-      "revoke client"
-    ]
+    "id": "TD-08",
+    "scenario": "credential is used from a workload other than its runtime binding",
+    "signal_source": "workload-control",
+    "detector": "workload_binding_mismatch",
+    "response": "quarantine_workload",
+    "mapped_technique": "workload impersonation"
   },
   {
-    "id": "T09",
-    "scenario": "credential in model prompt",
-    "expected": [
-      "secret isolation",
-      "redaction"
-    ]
+    "id": "TD-09",
+    "scenario": "new OAuth client is created after the initial compromise",
+    "signal_source": "governance",
+    "detector": "oauth_persistence_created",
+    "response": "revoke_oauth_client",
+    "mapped_technique": "MITRE ATT&CK T1098 Account Manipulation"
   },
   {
-    "id": "T10",
-    "scenario": "revoked identity execution",
-    "expected": [
-      "runtime status check",
-      "deny"
-    ]
+    "id": "TD-10",
+    "scenario": "sender-constrained proof identifier is replayed",
+    "signal_source": "gateway",
+    "detector": "proof_replayed",
+    "response": "revoke_credential",
+    "mapped_technique": "credential replay"
+  },
+  {
+    "id": "TD-11",
+    "scenario": "claims signing volume spikes far above the learned baseline",
+    "signal_source": "kms",
+    "detector": "kms_signing_spike",
+    "response": "human_review",
+    "mapped_technique": "behavioral anomaly; corroboration required"
   }
 ]
