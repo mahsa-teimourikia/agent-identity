@@ -1,30 +1,71 @@
 [
   {
-    "ts": "2026-08-19T10:00:00Z",
-    "principal": "agent:orchestrator",
-    "action": "delegate",
+    "event_id": "evt:vendor-access",
+    "event_type": "access",
+    "source": "gateway",
+    "sequence": 1,
+    "principal": "external:vendor",
+    "action": "invoke",
     "target": "agent:research",
-    "risk": 20
+    "trace_id": "trace:incident-42",
+    "audience": "urn:northstar:research",
+    "expected_audience": "urn:northstar:research",
+    "workload_id": "spiffe://vendor.example/agent",
+    "expected_workload_id": "spiffe://vendor.example/agent",
+    "note": "Known-good entry event used to establish the incident timeline."
   },
   {
-    "ts": "2026-08-19T10:02:00Z",
+    "event_id": "evt:scope-widened",
+    "event_type": "delegation",
+    "source": "governance",
+    "sequence": 1,
     "principal": "agent:research",
-    "action": "read",
-    "target": "vector-db",
-    "risk": 25
+    "action": "delegate",
+    "target": "tool:vector",
+    "trace_id": "trace:incident-42",
+    "parent_scope": ["claims:read"],
+    "delegated_scope": ["claims:read", "claims:export"],
+    "note": "The child authority exceeds its parent and must be removed."
   },
   {
-    "ts": "2026-08-19T10:03:00Z",
+    "event_id": "evt:proof-replay",
+    "event_type": "credential",
+    "source": "gateway",
+    "sequence": 2,
     "principal": "agent:research",
     "action": "token_exchange",
-    "target": "claims-api",
-    "risk": 80
+    "target": "api:claims",
+    "trace_id": "trace:incident-42",
+    "credential_id": "cred:research-17",
+    "proof_jti": "proof:reused-88",
+    "after_compromise": true,
+    "note": "A repeated proof identifier requires credential revocation."
   },
   {
-    "ts": "2026-08-19T10:04:00Z",
+    "event_id": "evt:kms-spike",
+    "event_type": "access",
+    "source": "kms",
+    "sequence": 1,
     "principal": "agent:research",
     "action": "kms_sign",
     "target": "kms:key:claims",
-    "risk": 95
+    "trace_id": "trace:incident-42",
+    "observed_count": 41,
+    "baseline_count": 2,
+    "after_compromise": true,
+    "note": "Behavioral anomaly: queue human review; do not auto-disable from this signal alone."
+  },
+  {
+    "event_id": "evt:telemetry-disabled",
+    "event_type": "telemetry",
+    "source": "telemetry-control",
+    "sequence": 1,
+    "principal": "agent:research",
+    "action": "disable_audit",
+    "target": "telemetry:identity",
+    "trace_id": "trace:incident-42",
+    "telemetry_healthy": false,
+    "after_compromise": true,
+    "note": "Loss of the trusted signal path is itself a critical finding."
   }
 ]

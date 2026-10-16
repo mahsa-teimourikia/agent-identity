@@ -4,6 +4,49 @@
 
 > **Goal:** turn agent identity from a static access-control configuration into a continuously observed, graph-analyzed, attack-tested and rapidly defensible security system.
 
+## Northstar Mutual incident lab
+
+Northstar Mutual operates a research agent that delegates retrieval to a vector tool and can reach a claims API and its signing key through approved service relationships. A compromised external vendor session reaches the research agent, widens a child delegation, replays a proof, attempts persistence, and suppresses telemetry. You are the identity defense engineer responsible for breaking that path without disabling the entire platform.
+
+The executable lab builds one coherent control plane:
+
+```text
+signed source event → strict normalization → rule + graph detection
+       → scoped response → recovery gates → tamper-evident evidence
+                           ↘ labelled evaluation + release gate
+```
+
+You will use commonly deployed Python libraries: **Pydantic** for strict event contracts, **PyJWT + cryptography** for Ed25519-signed teaching envelopes, **NetworkX** for identity-graph analysis, **PyYAML** for safe detection configuration, **pandas** for analysis, and **pytest** for adversarial verification. The repository also includes illustrative OPA/Rego and Cedar policies.
+
+### Run the lab
+
+From this course directory:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python lab.py
+pytest -q
+```
+
+The deterministic release gate expects the hardened pipeline to classify all **30/30** labelled cases with zero false positives and zero false negatives. The deliberately weak opaque-risk baseline classifies **12/30**, with 17 false negatives and one false positive. These fixtures test control logic; they are not a claim of real-world efficacy.
+
+### Security invariants
+
+- Parsing is not trust: only an authenticated, authorized telemetry source can create a `VerifiedEvent`.
+- Issuer, audience, tenant, validity, event authority, sequence, and replay state are checked before detection.
+- Detection rules select allowlisted functions; YAML cannot inject executable expressions.
+- A widened delegation, revoked identity, unhealthy telemetry, wrong audience, cross-environment use, and runtime-binding mismatch are deterministic controls—not model opinions.
+- A behavioral anomaly queues human review; it cannot independently disable production authority.
+- Containment is allowlisted, idempotent, and scoped to the credential, delegation, client, or workload that breaks the path.
+- Recovery requires current credential state, healthy telemetry, re-attestation, persistence removal, and incident approval.
+- Evidence is hash-chained, but a production system still needs independent signed checkpoints, trusted time, retention controls, and append-only storage.
+
+### Lab boundary
+
+Everything runs locally, without credentials or network calls. The JWT is a **Security Event Token-shaped teaching envelope**, not a complete OpenID Shared Signals transmitter/receiver implementation. The custom YAML schema demonstrates safe detection-as-code but does not claim Sigma compatibility. The graph priority value is a transparent ordinal index, not breach probability. OPA and Cedar files illustrate preventive policy controls; deploying either requires its real engine, policy lifecycle, and integration tests.
+
 Agent ecosystems create a new security graph:
 
 ```text
@@ -344,15 +387,21 @@ Before production, confirm identity graph coverage, crown-jewel tagging, credent
 
 ## NIST: software and AI agent identity
 
-NIST NCCoE's February 2026 concept paper on software and AI agent identity focuses on applying identity standards and best practices to agentic AI, with explicit attention to identification, authorization, auditing, non-repudiation and prompt-injection-related controls.
+NIST NCCoE's February 2026 paper focuses on applying identity standards and best practices to agentic AI, with explicit attention to identification, authorization, auditing, non-repudiation and prompt-injection-related controls. It is an **Initial Public Draft**, not a final standard, so use it as emerging direction rather than a conformance baseline.
 
 https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd
 
+## NIST incident response
+
+NIST SP 800-61 Revision 3, finalized in April 2025, integrates incident response into Cybersecurity Framework 2.0 risk management. This course's prepare, detect, contain, recover, validate and learn loop follows that operational framing.
+
+https://csrc.nist.gov/pubs/sp/800/61/r3/final
+
 ## OWASP Non-Human Identities Top 10 — 2025
 
-The OWASP NHI Top 10 provides a useful threat taxonomy for machine identities: improper offboarding, secret leakage, vulnerable third-party NHI, insecure authentication, overprivilege, insecure cloud deployment, long-lived secrets, environment isolation, NHI reuse and human use of NHI.
+The OWASP NHI Top 10 is an OWASP incubator project and a useful threat taxonomy for machine identities: improper offboarding, secret leakage, vulnerable third-party NHI, insecure authentication, overprivilege, insecure cloud deployment, long-lived secrets, environment isolation, NHI reuse and human use of NHI.
 
-https://owasp.org/www-project-non-human-identities-top-10/2025/top-10-2025/
+https://owasp.org/projects/non-human-identities-top-10
 
 ## SPIFFE
 
@@ -366,6 +415,18 @@ Shared Signals Framework 1.0, CAEP 1.0 and RISC 1.0 were approved as OpenID Fina
 
 https://openid.net/three-shared-signals-final-specifications-approved/
 
+The CAEP Interoperability Profile remains a draft as of this course update. Evaluate it separately from the final SSF/CAEP/RISC specifications.
+
+https://openid.net/specs/openid-caep-interoperability-profile-1_0.html
+
+## Threat knowledge and portable detections
+
+- MITRE ATT&CK T1078.004 covers abuse of valid cloud accounts: https://attack.mitre.org/techniques/T1078/004/
+- MITRE ATLAS tracks adversary tactics and techniques for AI-enabled systems: https://atlas.mitre.org/
+- The Sigma specification defines a portable rule structure for log detections: https://sigmahq.io/sigma-specification/
+
+The lab maps scenarios to these bodies where useful. Its YAML is deliberately smaller than Sigma, because exposing the translation boundary is more accurate than implying compatibility.
+
 ## Additional frameworks to map into the program
 
 - NIST SP 800-207 — Zero Trust Architecture
@@ -376,9 +437,29 @@ https://openid.net/three-shared-signals-final-specifications-approved/
 - OAuth 2.0 / Token Exchange / mTLS / DPoP — credential and sender-constraint foundations
 - OPA and Cedar — policy-as-code examples used throughout the curriculum
 
+## Tool and integration choices
+
+| Need | Lab choice | Common production alternatives | Boundary |
+|---|---|---|---|
+| Event validation | Pydantic | JSON Schema, Protobuf, Avro | A valid shape is not an authenticated source. |
+| Signed event | PyJWT + Ed25519 | OpenID SSF transmitter/receiver, managed event bus | The lab envelope is SET-shaped, not a complete protocol implementation. |
+| Relationship analysis | NetworkX | Neo4j, Amazon Neptune, graph analytics platforms | In-memory graphs do not provide enterprise freshness or scale. |
+| Detection-as-code | allowlisted PyYAML | Sigma, SIEM-native rules, OCSF-backed pipelines | Translate and test against the actual event schema. |
+| Preventive policy | OPA/Rego and Cedar examples | cloud IAM, Zanzibar-style engines, vendor policy services | Prevention and detection remain separate controls. |
+| Analysis and tests | pandas + pytest | notebooks, data warehouses, security validation platforms | Fixture metrics require production shadow evaluation before rollout. |
+
 # Practical notebook
 
-The accompanying notebook implements identity-graph modeling, graph queries, attack-path enumeration, blast-radius analysis, toxic combinations, credential-risk scoring, delegation analysis, anomalous events, posture scoring, critical overrides, detection-as-code, automated containment, telemetry-health checks, forensic timelines, red-team simulations, coverage matrices, metrics and an end-to-end attack/defense capstone.
+The accompanying notebook follows the Northstar incident end to end. It imports the same `lab.py` implementation exercised by tests; validates a signed source event; rejects unauthorized and replayed telemetry; enumerates attack paths and blast radius; compares remediation choices; loads and executes versioned rules; injects failures; performs scoped containment; distinguishes deterministic findings from a behavioral review signal; verifies evidence and recovery; and compares a weak baseline with the hardened 30-case release gate.
+
+## Production upgrade path
+
+1. Replace local keys and files with managed key custody, an SSF-capable transmitter/receiver or authenticated event bus, and a schema registry.
+2. Populate the graph from authoritative IAM, workload, delegation, tool, cloud and data inventories with freshness SLOs.
+3. Translate portable rules to Sigma or the target SIEM, normalize with OCSF/ECS where appropriate, and shadow-test before enforcement.
+4. Put response behind production approvals, rate limits, segregation of duties, rollback, ticketing and on-call integration.
+5. Anchor evidence externally and validate retention, privacy, data residency, trusted time and legal-hold requirements.
+6. Recalibrate labelled datasets continuously; report precision, recall, latency, coverage and residual attack paths by scenario.
 
 # Next course
 
