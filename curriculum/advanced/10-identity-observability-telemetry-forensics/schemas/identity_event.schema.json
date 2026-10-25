@@ -1,68 +1,69 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Agent Identity Security Event",
+  "$id": "https://northstar.example/schemas/agent-identity-event-2.0.json",
+  "title": "Northstar Agent Identity Evidence Event",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "schema_name",
     "schema_version",
+    "event_id",
     "event_type",
-    "timestamp",
+    "tenant_id",
+    "producer",
+    "sequence",
+    "occurred_at",
     "trace_id",
-    "actor"
+    "span_id",
+    "actor_id",
+    "actor_type",
+    "action",
+    "resource",
+    "outcome"
   ],
   "properties": {
-    "schema_name": {
-      "const": "agent.identity.event"
-    },
-    "schema_version": {
-      "type": "string"
-    },
+    "schema_name": {"const": "agent.identity.event"},
+    "schema_version": {"const": "2.0"},
+    "event_id": {"type": "string", "pattern": "^evt:[a-z0-9-]+$"},
     "event_type": {
-      "type": "string"
-    },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "trace_id": {
-      "type": "string"
-    },
-    "actor": {
-      "type": "object",
-      "required": [
-        "id",
-        "type"
+      "enum": [
+        "request.received",
+        "agent.invoke",
+        "delegation.issued",
+        "credential.exchanged",
+        "authorization.decision",
+        "authorization.enforced",
+        "tool.execute",
+        "api.access",
+        "telemetry.heartbeat"
       ]
     },
-    "subject": {
-      "type": [
-        "object",
-        "null"
-      ]
+    "tenant_id": {"type": "string", "minLength": 1},
+    "producer": {"type": "string", "minLength": 1},
+    "sequence": {"type": "integer", "minimum": 1},
+    "occurred_at": {"type": "integer", "minimum": 0},
+    "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+    "parent_span_id": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{16}$"
     },
-    "action": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "resource": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "decision": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "delegation_id": {
-      "type": [
-        "string",
-        "null"
-      ]
-    }
+    "actor_id": {"type": "string", "minLength": 1},
+    "actor_type": {"enum": ["human", "agent", "workload", "service"]},
+    "subject_id": {"type": ["string", "null"]},
+    "workload_id": {"type": ["string", "null"]},
+    "expected_workload_id": {"type": ["string", "null"]},
+    "action": {"type": "string", "minLength": 1},
+    "resource": {"type": "string", "minLength": 1},
+    "outcome": {"enum": ["success", "denied", "failure"]},
+    "decision": {"enum": ["permit", "deny", null]},
+    "authorization_request_id": {"type": ["string", "null"]},
+    "policy_version": {"type": ["string", "null"]},
+    "delegation_id": {"type": ["string", "null"]},
+    "parent_scope": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "delegated_scope": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "credential_fingerprint": {"type": ["string", "null"]},
+    "causes_event_id": {"type": ["string", "null"]},
+    "attributes": {"type": "object"}
   }
 }

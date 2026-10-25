@@ -1,31 +1,55 @@
+# Illustrative OpenTelemetry Collector Contrib configuration.
+# Validate against the exact Collector distribution/version before deployment.
 receivers:
   otlp:
     protocols:
-      grpc:
-      http:
+      grpc: {}
+      http: {}
 
 processors:
-  batch: {}
-  attributes/security:
-    actions:
-      - key: deployment.environment
-        action: upsert
-        value: training
   memory_limiter:
     check_interval: 1s
     limit_mib: 256
+    spike_limit_mib: 64
+  redaction/security:
+    # Fail closed: retain only reviewed low-cardinality evidence attributes.
+    allow_all_keys: false
+    allowed_keys:
+      - service.name
+      - deployment.environment.name
+      - gen_ai.operation.name
+      - gen_ai.agent.name
+      - gen_ai.tool.name
+      - northstar.tenant.id
+      - northstar.event.id
+      - northstar.actor.id
+      - northstar.authorization.request_id
+      - northstar.authorization.decision
+      - northstar.policy.version
+    blocked_key_patterns:
+      - "(?i).*(token|secret|password|authorization|cookie|prompt|tool_arguments|tool_result).*"
+    blocked_values:
+      - "(?i)bearer\\s+[a-z0-9._~+/=-]{8,}"
+      - "\\bsk-[A-Za-z0-9_-]{8,}\\b"
+    summary: info
+  batch:
+    timeout: 1s
+    send_batch_size: 512
 
 exporters:
   debug:
     verbosity: basic
 
 service:
+  telemetry:
+    logs:
+      level: info
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, attributes/security, batch]
+      processors: [memory_limiter, redaction/security, batch]
       exporters: [debug]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, attributes/security, batch]
+      processors: [memory_limiter, redaction/security, batch]
       exporters: [debug]

@@ -1,21 +1,41 @@
 rules:
   - id: OBS-001
-    name: Revoked identity activity
+    name: Permit decision lacks enforcement evidence
     severity: critical
-    condition: identity_status == revoked
+    detector: permit_without_enforcement
+    evidence_requirement: Match PDP and PEP events by authorization request ID.
   - id: OBS-002
-    name: Delegation expands authority
+    name: Delegation expands parent authority
     severity: critical
-    condition: child_scope !subset parent_scope
+    detector: delegation_widened
+    evidence_requirement: Compare normalized parent and child action sets.
   - id: OBS-003
-    name: Policy decision missing enforcement
+    name: Trace contains an orphan span
     severity: high
-    condition: permit_without_pep_event
+    detector: orphan_span
+    evidence_requirement: Resolve every parent span inside the collected trace.
   - id: OBS-004
-    name: Critical tool trace missing identity
+    name: Producer sequence contains a gap
     severity: high
-    condition: critical_tool and actor_id_missing
+    detector: sequence_gap
+    evidence_requirement: Preserve authenticated producer sequence numbers.
   - id: OBS-005
-    name: Telemetry heartbeat missing
+    name: Collection delay exceeds ordering SLO
+    severity: medium
+    detector: clock_skew
+    evidence_requirement: Preserve both source and observed timestamps.
+  - id: OBS-006
+    name: Telemetry heartbeat is overdue
     severity: critical
-    condition: producer_expected and heartbeat_overdue
+    detector: heartbeat_overdue
+    evidence_requirement: Monitor expected producers independently of activity.
+  - id: OBS-007
+    name: PDP and PEP policy versions disagree
+    severity: critical
+    detector: policy_mismatch
+    evidence_requirement: Record policy version at decision and enforcement.
+  - id: OBS-008
+    name: Runtime identity binding mismatch
+    severity: critical
+    detector: runtime_mismatch
+    evidence_requirement: Compare observed workload identity with trusted deployment state.

@@ -1,0 +1,138 @@
+[
+  {
+    "case_id": "normal-complete",
+    "event_count": 8,
+    "expected_rules": []
+  },
+  {
+    "case_id": "denied-without-enforcement",
+    "event_count": 7,
+    "expected_rules": []
+  },
+  {
+    "case_id": "normal-redaction",
+    "event_count": 8,
+    "expected_rules": []
+  },
+  {
+    "case_id": "normal-single-sequence",
+    "event_count": 8,
+    "expected_rules": []
+  },
+  {
+    "case_id": "normal-policy",
+    "event_count": 8,
+    "expected_rules": []
+  },
+  {
+    "case_id": "normal-runtime",
+    "event_count": 8,
+    "expected_rules": []
+  },
+  {
+    "case_id": "missing-enforcement",
+    "event_count": 7,
+    "expected_rules": [
+      "OBS-001"
+    ]
+  },
+  {
+    "case_id": "widened-delegation",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-002"
+    ]
+  },
+  {
+    "case_id": "orphan-tool",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-003"
+    ]
+  },
+  {
+    "case_id": "producer-sequence-gap",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-004"
+    ]
+  },
+  {
+    "case_id": "clock-skew",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-005"
+    ]
+  },
+  {
+    "case_id": "heartbeat-overdue",
+    "event_count": 9,
+    "expected_rules": [
+      "OBS-005",
+      "OBS-006"
+    ]
+  },
+  {
+    "case_id": "policy-mismatch",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-007"
+    ]
+  },
+  {
+    "case_id": "runtime-mismatch",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-008"
+    ]
+  },
+  {
+    "case_id": "missing-and-widened",
+    "event_count": 7,
+    "expected_rules": [
+      "OBS-001",
+      "OBS-002"
+    ]
+  },
+  {
+    "case_id": "orphan-and-skew",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-003",
+      "OBS-005"
+    ]
+  },
+  {
+    "case_id": "gap-and-runtime",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-004",
+      "OBS-008"
+    ]
+  },
+  {
+    "case_id": "policy-and-orphan",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-003",
+      "OBS-007"
+    ]
+  },
+  {
+    "case_id": "widened-and-runtime",
+    "event_count": 8,
+    "expected_rules": [
+      "OBS-002",
+      "OBS-008"
+    ]
+  },
+  {
+    "case_id": "triple-gap",
+    "event_count": 7,
+    "expected_rules": [
+      "OBS-001",
+      "OBS-003",
+      "OBS-004"
+    ]
+  }
+]
