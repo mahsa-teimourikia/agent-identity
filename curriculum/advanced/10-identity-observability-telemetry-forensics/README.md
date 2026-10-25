@@ -4,6 +4,46 @@
 
 > **Goal:** make an agent's identity, authority, delegation, credentials, tool use, policy decisions and runtime actions reconstructable from trustworthy telemetry.
 
+## Northstar Mutual forensic reconstruction lab
+
+A suspicious claims-agent run crosses an edge gateway, agent runtime, governance service, token service, policy decision and enforcement points, MCP gateway, and claims API. The incident team has plenty of JSON—but cannot initially prove which producer emitted it, whether a permit was enforced, whether spans are causally connected, or whether retained evidence was rewritten.
+
+The credential-free lab builds one coherent evidence pipeline:
+
+```text
+signed producer event → authority + tenant + replay checks → privacy controls
+→ causal trace + gap detection → hash chain + signed checkpoint → case bundle
+```
+
+It uses **Pydantic** for strict contracts, **cryptography/Ed25519** for producer and checkpoint signatures, the real **OpenTelemetry Python SDK** for spans, **NetworkX** for causal graphs, **PyYAML** for allowlisted detection-as-code, **pandas** in the notebook, and **pytest** for adversarial verification.
+
+### Run it
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python lab.py
+pytest -q
+```
+
+The hardened release gate requires exact rule-set agreement on all **20/20** labelled traces. The deliberately weak raw-log baseline classifies **5/20**, misses 14 incidents, and falsely flags one legitimate denial. These are deterministic fixture results, not a production detection benchmark.
+
+### Trust and privacy invariants
+
+- Schema-valid telemetry remains untrusted until its signature, producer binding, event authority, tenant, time, sequence, and replay state pass.
+- Source time and observed time are preserved separately; late delivery is not silently rewritten into causal order.
+- Trace context correlates work but never grants identity or authorization.
+- Email-like identifiers are keyed-HMAC pseudonyms; secret-bearing keys and bearer-like values are redacted before storage.
+- A permit decision is not proof of enforcement; PDP and PEP events must join on the authorization request and policy version.
+- Missing parents, sequence gaps, and overdue heartbeats are reported as **evidence gaps**, not invented attacker actions.
+- A local hash chain detects retained-entry edits, while an independently signed checkpoint additionally detects truncation or root replacement.
+- The case bundle labels timeline facts as observed and keeps findings/inferences separate.
+
+### Lab boundary
+
+The event envelope and schema are Northstar teaching profiles, not OpenID SSF, OCSF, ECS, or vendor-SIEM conformance. The OpenTelemetry Collector file is an illustrative **contrib** configuration and must be validated against the exact deployed distribution. No prompt, completion, tool argument, bearer token, customer record, or chain-of-thought is collected. Production deployments additionally need managed keys, durable queues, authenticated OTLP, trusted time, external immutable anchors, access-controlled evidence storage, retention/legal-hold policy, and tested schema evolution.
+
 An agent incident often crosses many systems:
 
 ```text
@@ -199,9 +239,7 @@ invoke_agent
 
 # 7. GenAI semantic conventions
 
-OpenTelemetry's Generative AI semantic conventions standardize telemetry for GenAI operations and agent/tool activity.
-
-In 2026, OpenTelemetry examples show an `invoke_agent` span with child model and `execute_tool` spans.
+OpenTelemetry's Generative AI semantic conventions define emerging common names for GenAI operations and agent/tool activity. In 2026 the work moved to the dedicated `semantic-conventions-genai` repository; agent, tool, and MCP conventions remain **Development**, so pin and record the convention version rather than treating attribute names as permanently stable.
 
 Useful concepts include:
 
@@ -1379,52 +1417,28 @@ Coverage metrics reported?
 
 # Practical notebook
 
-The notebook contains hands-on labs for:
+The executed notebook follows the Northstar incident end to end and imports the same `lab.py` covered by tests. Learners first observe the failure of raw log search, then build strict events, authenticated collection, recursive redaction and pseudonymization, real OpenTelemetry spans, causal graphs, PDP/PEP correlation, gap-aware detections, completeness metrics, a signed evidence checkpoint, and a manifest-bound case bundle. Failure injection covers forged events, unauthorized producers, replay, missing enforcement, orphan spans, sequence gaps, clock skew, policy mismatch, runtime mismatch, tampering, and truncation.
 
-1. normalized event schemas;
-2. trace/span generation;
-3. W3C-style context;
-4. identity context;
-5. agent invocation traces;
-6. model/tool child spans;
-7. authorization events;
-8. PDP/PEP correlation;
-9. credential lifecycle;
-10. token exchange;
-11. delegation events;
-12. delegation lineage;
-13. tool/MCP telemetry;
-14. cloud/workload events;
-15. federation events;
-16. SSF/CAEP-style signals;
-17. schema versioning;
-18. cross-system correlation;
-19. occurrence vs ingestion time;
-20. causal reconstruction;
-21. enrichment;
-22. PII/secret redaction;
-23. credential fingerprinting;
-24. security-aware sampling;
-25. tail-sampling simulation;
-26. telemetry integrity;
-27. hash-chain evidence;
-28. Merkle roots;
-29. evidence checkpoints;
-30. chain of custody;
-31. forensic timelines;
-32. effective-authority reconstruction;
-33. policy-version reconstruction;
-34. detection rules;
-35. missing-telemetry detection;
-36. SIEM enrichment;
-37. case bundles;
-38. audit queries;
-39. observability coverage;
-40. trace completeness;
-41. telemetry quality;
-42. retention/cost routing;
-43. adversarial evidence-tampering tests;
-44. end-to-end forensic capstone.
+## Technology and schema choices
+
+| Need | Lab choice | Common production choices | Important boundary |
+|---|---|---|---|
+| Transport and signal model | OpenTelemetry concepts and SDK | OTLP + Collector, Kafka/event bus, vendor agents | Trace context correlates; it does not authenticate identity. |
+| Security-event exchange | signed local envelope | OpenID SSF/CAEP/RISC | The lab is not an SSF transmitter or receiver. |
+| Normalization | typed Northstar schema | OTel Logs, OCSF, ECS, vendor CIMs | Map explicitly and retain source schema/version. |
+| Collection privacy | recursive application redaction + fail-closed Collector example | OTel transform/redaction processors, DLP gateways | Collector redaction is contrib and maturity differs by signal. |
+| Causal analysis | NetworkX in memory | trace backends, graph databases, SIEM correlation | Missing telemetry limits what can be proven. |
+| Evidence integrity | hash chain + Ed25519 checkpoint | WORM/object lock, transparency logs, external timestamping | A chain without an external anchor cannot prove completeness. |
+
+## Production upgrade path
+
+1. Authenticate and encrypt OTLP; use managed producer keys and rotation with auditable trust distribution.
+2. Add durable collection queues, backpressure, dead-letter handling, deduplication, regional isolation, and collection SLOs.
+3. Version mappings into OTel Logs plus OCSF/ECS/SIEM schemas; preserve original IDs, source versions, and transformation lineage.
+4. Apply minimization before export, manage HMAC keys separately, test redaction continuously, and enforce retention/deletion/legal holds.
+5. Route complete security-relevant traces before sampling; validate tail-sampling state, affinity, memory, and failure behavior.
+6. Store case bundles in access-controlled immutable storage and anchor signed checkpoints outside the evidence administrator's trust domain.
+7. Re-evaluate labelled traces by tenant, producer, event type, delay, and failure class; report denominators and valid work blocked.
 
 ---
 
@@ -1432,17 +1446,33 @@ The notebook contains hands-on labs for:
 
 ## OpenTelemetry GenAI observability
 
-OpenTelemetry's 2026 GenAI observability guidance demonstrates `invoke_agent` traces with child model and tool-execution spans and documents GenAI semantic conventions for model, token and operation telemetry.
+The maintained GenAI repository defines `invoke_agent`, `invoke_workflow`, and `execute_tool` spans, but labels the conventions **Development**. Content-bearing attributes are opt-in or explicitly sensitive; record low-cardinality metadata by default.
 
-https://opentelemetry.io/blog/2026/genai-observability/
+https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-agent-spans.md
 
 ## OpenTelemetry GenAI semantic conventions
 
-https://opentelemetry.io/docs/specs/semconv/gen-ai/
+https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-spans.md
 
 ## OpenTelemetry Collector
 
 https://opentelemetry.io/docs/collector/
+
+The Collector contrib redaction processor is beta for traces and alpha for logs/metrics as of this update; treat configuration maturity as deployment input, not a footnote.
+
+https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/redactionprocessor
+
+## OpenTelemetry Logs data model
+
+The stable Logs data model separates source `Timestamp` from `ObservedTimestamp` and defines TraceId/SpanId correlation fields—the semantics implemented by this lab.
+
+https://opentelemetry.io/docs/specs/otel/logs/data-model/
+
+## OCSF
+
+OCSF provides maintained event classes for IAM, findings, API activity, and live evidence. The lab compares it as a production normalization target without claiming conformance.
+
+https://schema.ocsf.io/
 
 ## W3C Trace Context
 
@@ -1465,6 +1495,8 @@ https://openid.net/specs/authorization-api-1_0.html
 https://spiffe.io/docs/latest/spiffe-specs/
 
 ## NIST software and AI agent identity
+
+This February 2026 publication is an **Initial Public Draft**, not a final standard.
 
 https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd
 
