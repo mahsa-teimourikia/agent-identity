@@ -32,6 +32,57 @@ The central question is:
 
 ---
 
+## Northstar Insurance scenario
+
+Northstar is preparing its 2026-Q3 assurance package for production claims agents. A weak review trusts self-reported inventory fields and a screenshot. The hardened workflow must instead:
+
+1. establish the assessment scope and versioned control catalog;
+2. accept evidence only from the authoritative producer for each source;
+3. distinguish `fail`, `exception`, `not_applicable`, and `indeterminate` from `pass`;
+4. report evidence completeness with an explicit numerator and denominator;
+5. preserve legal holds and a verifiable chain of custody;
+6. bind results and the complete artifact set into a signed audit pack; and
+7. let an independent verifier detect edits, truncation, wrong signers, and stale or cross-tenant evidence.
+
+The default implementation is deterministic, offline, and credential-free. All identities, keys, evidence, and incidents are synthetic.
+
+## Run the lab
+
+From this course directory:
+
+```bash
+python -m pip install -r requirements.txt
+python lab.py
+python -m pytest -q tests/test_compliance.py
+```
+
+Expected release-gate result:
+
+```text
+hardened exact classifications: 18/18
+hardened false passes: 0
+baseline exact classifications: 9/18
+baseline false passes: 8
+```
+
+The baseline is intentionally unsafe and exists only to reveal false assurance. It trusts posture fields without validating evidence.
+
+## Success criteria and boundaries
+
+After the course, a learner should be able to explain, implement, attack, and verify the assurance chain. The lab proves the local control and evidence invariants; it does **not** provide legal advice, certify compliance, implement a complete GRC platform, validate an Open Policy Agent or Cedar binary, or claim full OSCAL conformance. The OSCAL-shaped export teaches traceability and must be validated against the official model before production exchange.
+
+Hard invariants:
+
+- typed data is not trusted evidence;
+- a control cannot pass when its required evidence is missing or stale;
+- exceptions remain visible as exceptions and never become passes;
+- framework mappings carry versions and authoritative source links;
+- tenant, source-to-producer binding, signature, digest, replay, and time checks happen before evidence admission;
+- a custody chain proves internal continuity, while the signed pack binds the expected terminal root and artifact count to detect truncation;
+- deterministic application code—not an agent or language model—makes the release decision.
+
+---
+
 # Learning outcomes
 
 You will learn to:
@@ -1727,52 +1778,43 @@ Forensic exercises performed?
 
 # Practical notebook
 
-The notebook builds a complete assurance pipeline:
+The notebook imports the same `lab.py` tested by CI and follows one investigation rather than 44 disconnected snippets:
 
-1. control catalog;
-2. framework mappings;
-3. identity inventory;
-4. control applicability;
-5. ownership tests;
-6. risk-tier controls;
-7. credential controls;
-8. least-privilege tests;
-9. delegation attenuation;
-10. segregation-of-duties graph;
-11. offboarding tests;
-12. third-party controls;
-13. policy-as-code checks;
-14. CI/CD compliance gate;
-15. evidence specifications;
-16. evidence collection;
-17. evidence hashing;
-18. evidence manifests;
-19. evidence freshness;
-20. evidence completeness;
-21. continuous control monitoring;
-22. attestation workflows;
-23. access certification;
-24. event-driven recertification;
-25. exception workflow;
-26. compensating controls;
-27. expired-exception detection;
-28. configuration drift;
-29. audit universe;
-30. random sampling;
-31. risk-based sampling;
-32. control test records;
-33. findings;
-34. remediation/retest;
-35. risk-weighted posture;
-36. executive dashboard;
-37. retention;
-38. legal hold;
-39. chain of custody;
-40. historical reconstruction;
-41. audit-pack generation;
-42. third-party assurance;
-43. inherited controls;
-44. end-to-end continuous-compliance capstone.
+1. expose the unsafe self-reported baseline;
+2. load strict agent, control, mapping, evidence, exception, custody, and audit-pack contracts;
+3. admit signed evidence through the tenant, authority, digest, signature, replay, and time boundary;
+4. evaluate control applicability and evidence completeness;
+5. inject missing, stale, forged, cross-tenant, replayed, and tampered evidence;
+6. exercise valid, expired, wrongly approved, and undercompensated exceptions;
+7. compare deterministic risk sampling with its population coverage;
+8. apply retention and legal-hold rules;
+9. build and attack the custody chain and signed audit pack;
+10. export an explicitly non-conformant OSCAL-shaped assessment result;
+11. evaluate all 18 labelled cases against the weak baseline; and
+12. map the teaching implementation to production GRC, KMS/HSM, immutable storage, policy, and workflow services.
+
+## Technology landscape
+
+| Layer | Common choices | Best fit | Important boundary |
+|---|---|---|---|
+| Machine-readable controls and assessments | NIST OSCAL, vendor APIs, internal schemas | Portable catalogs, assessment plans, results, and evidence links | A JSON object that resembles OSCAL is not automatically schema-conformant or semantically complete. |
+| Policy evaluation | OPA/Rego, Conftest, Cedar, cloud-native policy engines | Deterministic configuration and authorization invariants | Cedar focuses on application authorization; neither engine replaces evidence collection or auditor judgment. |
+| Evidence collection | Cloud audit APIs, SIEM/data lake, OpenTelemetry, inventory and identity APIs | Current configuration plus runtime evidence | Collector identity, tenant, source authority, freshness, and replay must be verified. |
+| Integrity and signing | KMS/HSM-backed signatures, Sigstore/in-toto patterns, immutable object storage | Independent verification and durable provenance | Hashes alone do not prove signer identity, completeness, or expected terminal state. |
+| GRC and assurance workflow | ServiceNow GRC/IRM, commercial continuous-control platforms, internal workflows | Ownership, exceptions, testing, findings, remediation, and reporting | Product workflow state is not proof that a technical control operated. |
+| Forensic case management | SIEM/SOAR, evidence vaults, legal-hold and e-discovery systems | Custody, retention, investigation, and disclosure workflows | Legal requirements vary; counsel and records-management owners define production policy. |
+
+## Production upgrade path
+
+| Teaching implementation | Production replacement |
+|---|---|
+| Deterministic in-process Ed25519 keys | Rotated KMS/HSM keys, certificate identity, signer authorization, revocation, and transparency/audit logs |
+| Python dictionaries and JSON fixtures | Versioned catalog/assessment models, schema registry, migration controls, and authoritative system APIs |
+| In-memory evidence store | Tenant-isolated immutable storage with retention, legal hold, access logging, backup, and disaster recovery |
+| Local source allowlist | Authenticated workload identity plus per-source authorization and producer lifecycle governance |
+| Single-process evaluation | Idempotent scheduled/event-driven workers with retries, checkpoints, reconciliation, and SLOs |
+| Teaching OSCAL-shaped export | Official OSCAL 1.2.3 model validation, profile resolution, identifiers, back-matter resources, and consumer interoperability tests |
+| Static release thresholds | Risk-approved, versioned gates with change control, override workflow, monitoring, and rollback |
 
 ---
 
@@ -1784,9 +1826,25 @@ NIST's 2026 initiative focuses on standards-based approaches to identifying and 
 
 https://www.nccoe.nist.gov/projects/software-and-ai-agent-identity-and-authorization
 
-## NIST SP 800-53 Rev. 5
+## NIST SP 800-53 and SP 800-53A Release 5.2.0
 
-https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final
+NIST released 5.2.0 in August 2025 and publishes the controls and assessment procedures in machine-readable formats through CPRT.
+
+https://csrc.nist.gov/News/2025/nist-releases-revision-to-sp-800-53-controls
+
+https://csrc.nist.gov/pubs/sp/800/53/a/r5/final
+
+## NIST OSCAL 1.2.3
+
+The lab's export is deliberately labelled an OSCAL-shaped teaching subset. OSCAL 1.2.3 is the current patch release used for the production-upgrade discussion.
+
+https://pages.nist.gov/OSCAL/about/news/
+
+## NIST SP 800-61 Rev. 3
+
+The April 2025 final revision integrates incident response into CSF 2.0 risk management and supersedes Rev. 2.
+
+https://csrc.nist.gov/pubs/sp/800/61/r3/final
 
 ## NIST SP 800-207 — Zero Trust Architecture
 
@@ -1833,6 +1891,10 @@ https://www.pcisecuritystandards.org/
 ## EU AI Act
 
 https://eur-lex.europa.eu/eli/reg/2024/1689/oj
+
+The European Commission's enforcement overview should be consulted for the current staged applicability dates; do not infer a legal deadline from this course.
+
+https://digital-strategy.ec.europa.eu/en/policies/enforcement-ai-act
 
 ## DORA
 

@@ -1,0 +1,20 @@
+[
+  {"case_id":"C01","description":"compliant production agent","expected":"release","mutation":"none"},
+  {"case_id":"C02","description":"attenuated delegation","expected":"release","mutation":"none"},
+  {"case_id":"C03","description":"complete offboarding","expected":"release","mutation":"none"},
+  {"case_id":"C04","description":"missing registration","expected":"block","mutation":"none"},
+  {"case_id":"C05","description":"missing owner","expected":"block","mutation":"none"},
+  {"case_id":"C06","description":"static production credential","expected":"block","mutation":"none"},
+  {"case_id":"C07","description":"widened delegation","expected":"block","mutation":"none"},
+  {"case_id":"C08","description":"incomplete offboarding","expected":"block","mutation":"none"},
+  {"case_id":"C09","description":"excess unused privilege","expected":"release","mutation":"none"},
+  {"case_id":"C10","description":"missing evidence","expected":"review","mutation":"drop-evidence"},
+  {"case_id":"C11","description":"stale evidence","expected":"review","mutation":"stale-evidence"},
+  {"case_id":"C12","description":"forged evidence","expected":"review","mutation":"forge-signature"},
+  {"case_id":"C13","description":"wrong-tenant evidence","expected":"review","mutation":"wrong-tenant"},
+  {"case_id":"C14","description":"replayed evidence","expected":"review","mutation":"duplicate-evidence"},
+  {"case_id":"C15","description":"valid bounded exception","expected":"review","mutation":"none"},
+  {"case_id":"C16","description":"expired exception","expected":"block","mutation":"none"},
+  {"case_id":"C17","description":"undercompensated exception","expected":"block","mutation":"none"},
+  {"case_id":"C18","description":"tampered payload","expected":"review","mutation":"tamper-payload"}
+]
