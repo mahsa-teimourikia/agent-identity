@@ -1,33 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oneplusi.io/schemas/control-result-v2.json",
+  "title": "Agent identity control result",
   "type": "object",
-  "required": [
-    "control_id",
-    "subject",
-    "status",
-    "tested_at"
-  ],
+  "additionalProperties": false,
+  "required": ["control_id", "subject", "status", "reason_code", "tested_at", "policy_version", "evidence_ids", "evidence_complete", "critical"],
   "properties": {
-    "control_id": {
-      "type": "string"
-    },
-    "subject": {
-      "type": "string"
-    },
-    "status": {
-      "enum": [
-        "pass",
-        "fail",
-        "exception",
-        "not_applicable"
-      ]
-    },
-    "tested_at": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "evidence": {
-      "type": "array"
-    }
+    "control_id": {"type":"string", "pattern":"^[A-Z]{2}-[0-9]{2}$"},
+    "subject": {"type":"string", "pattern":"^agent:[a-z0-9-]+$"},
+    "status": {"enum":["pass","fail","exception","not_applicable","indeterminate"]},
+    "reason_code": {"type":"string", "minLength":3},
+    "tested_at": {"type":"string", "format":"date-time"},
+    "policy_version": {"type":"string", "minLength":1},
+    "evidence_ids": {"type":"array", "items":{"type":"string", "pattern":"^ev-[a-z0-9-]+$"}, "uniqueItems":true},
+    "evidence_complete": {"type":"boolean"},
+    "critical": {"type":"boolean"},
+    "exception_id": {"type":["string","null"], "pattern":"^EX-[0-9]+$"}
   }
 }

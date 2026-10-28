@@ -1,74 +1,9 @@
 [
-  {
-    "control_id": "AG-01",
-    "name": "Registered identity",
-    "domain": "Governance",
-    "type": "preventive",
-    "frequency": "continuous",
-    "critical": true
-  },
-  {
-    "control_id": "AG-02",
-    "name": "Accountable owner",
-    "domain": "Governance",
-    "type": "preventive",
-    "frequency": "continuous",
-    "critical": true
-  },
-  {
-    "control_id": "AC-01",
-    "name": "Least privilege",
-    "domain": "Authorization",
-    "type": "preventive",
-    "frequency": "continuous",
-    "critical": false
-  },
-  {
-    "control_id": "AC-02",
-    "name": "Segregation of duties",
-    "domain": "Authorization",
-    "type": "preventive",
-    "frequency": "continuous",
-    "critical": true
-  },
-  {
-    "control_id": "CR-01",
-    "name": "Short-lived production credentials",
-    "domain": "Credential",
-    "type": "preventive",
-    "frequency": "continuous",
-    "critical": true
-  },
-  {
-    "control_id": "DG-01",
-    "name": "Delegation attenuation",
-    "domain": "Delegation",
-    "type": "preventive",
-    "frequency": "continuous",
-    "critical": true
-  },
-  {
-    "control_id": "LC-01",
-    "name": "Complete offboarding",
-    "domain": "Lifecycle",
-    "type": "corrective",
-    "frequency": "event",
-    "critical": true
-  },
-  {
-    "control_id": "AU-01",
-    "name": "Critical action auditability",
-    "domain": "Audit",
-    "type": "detective",
-    "frequency": "continuous",
-    "critical": true
-  },
-  {
-    "control_id": "IR-01",
-    "name": "Identity incident containment",
-    "domain": "Incident",
-    "type": "corrective",
-    "frequency": "event",
-    "critical": true
-  }
+  {"control_id":"AG-01","name":"Registered agent identity","domain":"governance","critical":true,"evidence_types":["registry_record"],"max_age_hours":24},
+  {"control_id":"AG-02","name":"Named accountable owner","domain":"governance","critical":true,"evidence_types":["owner_record"],"max_age_hours":24},
+  {"control_id":"CR-01","name":"Short-lived production credential","domain":"credential","critical":true,"evidence_types":["credential_config","issuance_event"],"max_age_hours":24},
+  {"control_id":"AC-01","name":"Least privilege","domain":"authorization","critical":false,"evidence_types":["entitlement_snapshot","usage_window"],"max_age_hours":168},
+  {"control_id":"DG-01","name":"Delegation attenuation","domain":"delegation","critical":true,"evidence_types":["delegation_record","policy_decision"],"max_age_hours":24},
+  {"control_id":"LC-01","name":"Complete offboarding","domain":"lifecycle","critical":true,"evidence_types":["lifecycle_event","revocation_event"],"max_age_hours":24},
+  {"control_id":"AU-01","name":"Critical action reconstruction","domain":"audit","critical":true,"evidence_types":["authorization_event","enforcement_event","action_event"],"max_age_hours":24}
 ]
