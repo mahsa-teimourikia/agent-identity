@@ -1,62 +1,19 @@
 [
-  {
-    "id": "A01",
-    "attack": "model spoofs user identity",
-    "expected": "deny"
-  },
-  {
-    "id": "A02",
-    "attack": "unapproved workload claims registered agent",
-    "expected": "deny"
-  },
-  {
-    "id": "A03",
-    "attack": "token exchange scope escalation",
-    "expected": "deny"
-  },
-  {
-    "id": "A04",
-    "attack": "child delegation exceeds parent",
-    "expected": "deny"
-  },
-  {
-    "id": "A05",
-    "attack": "cross-tenant claim substitution",
-    "expected": "deny"
-  },
-  {
-    "id": "A06",
-    "attack": "MCP token passthrough",
-    "expected": "deny"
-  },
-  {
-    "id": "A07",
-    "attack": "external agent trusted without local policy",
-    "expected": "deny"
-  },
-  {
-    "id": "A08",
-    "attack": "payment parameters changed after approval",
-    "expected": "deny"
-  },
-  {
-    "id": "A09",
-    "attack": "revoked token reused",
-    "expected": "deny"
-  },
-  {
-    "id": "A10",
-    "attack": "telemetry suppressed",
-    "expected": "quarantine_or_fail_safe"
-  },
-  {
-    "id": "A11",
-    "attack": "retired identity executes",
-    "expected": "deny"
-  },
-  {
-    "id": "A12",
-    "attack": "expired governance exception",
-    "expected": "block_or_reapprove"
-  }
+  {"id": "normal_update", "attack": "control: assigned claim update", "expected": "allow"},
+  {"id": "prompt_identity_spoof", "attack": "prompt claims CFO identity", "expected": "deny"},
+  {"id": "cross_tenant", "attack": "cross-tenant context substitution", "expected": "deny"},
+  {"id": "inactive_agent", "attack": "suspended agent executes", "expected": "deny"},
+  {"id": "wrong_workload", "attack": "unapproved workload claims agent identity", "expected": "deny"},
+  {"id": "stale_attestation", "attack": "workload attestation is stale", "expected": "deny"},
+  {"id": "expired_delegation", "attack": "expired delegation reused", "expected": "deny"},
+  {"id": "wrong_delegation_scope", "attack": "action exceeds delegated scope", "expected": "deny"},
+  {"id": "missing_relationship", "attack": "agent lacks claim assignment", "expected": "deny"},
+  {"id": "critical_risk", "attack": "critical current risk", "expected": "deny"},
+  {"id": "high_risk", "attack": "high risk requires step-up", "expected": "approval_required"},
+  {"id": "wrong_audience", "attack": "token presented to wrong resource", "expected": "deny"},
+  {"id": "wrong_sender", "attack": "sender-constrained token stolen", "expected": "deny"},
+  {"id": "revoked_token", "attack": "revoked token replayed", "expected": "deny"},
+  {"id": "expired_token", "attack": "expired token replayed", "expected": "deny"},
+  {"id": "stale_federation", "attack": "federation metadata is stale", "expected": "deny"},
+  {"id": "untrusted_anchor", "attack": "partner chain terminates at unknown anchor", "expected": "deny"}
 ]

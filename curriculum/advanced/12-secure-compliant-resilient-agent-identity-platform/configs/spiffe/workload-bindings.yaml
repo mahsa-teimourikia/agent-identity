@@ -6,5 +6,9 @@ bindings:
     - spiffe://corp.example/prod/research-agent
 federation:
   - trust_domain: partner.example
+    bundle_endpoint_url: https://spire.partner.example:8443
+    bundle_endpoint_profile: https_spiffe
+    endpoint_spiffe_id: spiffe://partner.example/spire/server
+    maximum_bundle_age: 1h
     allowed_ids:
       - spiffe://partner.example/prod/research-agent

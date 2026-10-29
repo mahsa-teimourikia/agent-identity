@@ -8,6 +8,39 @@ This capstone is deliberately broader than a typical notebook.
 
 The learner builds an **enterprise control plane** around an autonomous claims-assistant ecosystem.
 
+## Capstone contract
+
+Northstar Insurance must let an autonomous claims agent update an assigned claim and request a bounded payment without letting a prompt, bearer token, stale relationship, replayed approval, or unverified federation relationship become authority. The lab treats the protected resource—not the model—as the final effect boundary.
+
+By the end, you will be able to:
+
+- separate human, logical-agent, workload, task, delegation, credential, and tool identity;
+- exchange audience- and sender-bound authority without widening scope or lifetime;
+- compose lifecycle, workload, relationship, delegation, risk, and federation evidence into a deterministic decision;
+- bind a signed, single-use human approval to one exact request and policy version;
+- enforce constraints, idempotency, and unknown-outcome reconciliation at the PEP;
+- emit privacy-minimized telemetry, respond to authoritative alerts, and prove evidence completeness; and
+- compare a weak token-presence baseline with an adversarially tested hardened design.
+
+## Run the practical path
+
+From this course directory:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+pytest -q tests/test_evidence.py tests/test_invariants.py tests/test_platform.py
+python lab.py
+jupyter lab advanced_12_capstone_agent_identity_platform.ipynb
+```
+
+The lab is complete when all **17 labelled attack and control cases** match their expected terminal state, with zero false allows and zero approval bypasses. The notebook must also run from a clean kernel without network access.
+
+## Scope and non-goals
+
+`lab.py` is the canonical, executable teaching implementation. The `src/` modules expose its reusable contracts. The OPA, Cedar, OpenFGA, SPIFFE, MCP, OpenTelemetry, and JSON configuration files are reviewable integration artifacts—not proof that their respective production binaries accepted the configuration. Production adoption requires vendor-native schema validation, conformance suites, key custody, availability engineering, persistence, and live integration tests.
+
 ```text
 Human / Enterprise IdP
         │
@@ -1105,23 +1138,31 @@ evidence
 
 # 53. State-of-the-art standards baseline
 
-The capstone uses current standards and guidance including:
+This course distinguishes stable specifications from active work so an architecture review does not mistake a draft for a deployment contract.
 
-```text
-NIST 2026 Software and AI Agent Identity initiative
-NIST SP 800-207 Zero Trust
-SPIFFE / SPIRE
-OpenID AuthZEN Authorization API 1.0
-OpenID Federation 1.1
-OAuth 2.0 / RFC 8693 Token Exchange
-OAuth mTLS / DPoP
-OpenID Shared Signals / CAEP / RISC
-MCP authorization specification
-OpenTelemetry GenAI semantic conventions
-OPA / Cedar / OpenFGA
-OWASP Non-Human Identities Top 10
-SLSA / in-toto
-```
+| Area | Current baseline (October 2026) | What the lab proves |
+|---|---|---|
+| Agent identity | NIST's Software and AI Agent Identity and Authorization project is moving from its 2026 concept paper into implementation use cases; the first announced use case is DevSecOps | explicit agent/workload/task bindings and evidence, not a claim of NIST conformance |
+| External authorization | AuthZEN Authorization API 1.0 is final; COAZ, the MCP binding, access request/approval, and obligations work remain emerging working-group material | a typed PEP/PDP decision contract and approval re-evaluation pattern |
+| Federation | OpenID Federation 1.1 and OpenID Connect Federation 1.1 became Final Specifications in May 2026 | local trust-anchor, freshness, namespace, and authority intersection checks |
+| Workload identity | SPIFFE Workload API and federation specifications bind SVID validation to the correct trust-domain bundle | a deterministic SPIFFE-shaped workload/federation adapter |
+| Agent tools | Current MCP HTTP authorization uses OAuth protected-resource metadata and resource/audience restriction | authorization before tool execution and no downstream token passthrough |
+| Observability | OpenTelemetry moved GenAI, agent, tool, evaluation, and MCP conventions into a dedicated repository; content attributes can contain sensitive data | correlated, recursively redacted course events rather than a claim of semantic-convention certification |
+| Policy engines | OPA, Cedar, and OpenFGA represent complementary contextual, schema-aware, and relationship-oriented models | composition at a PEP; example policy files are illustrative until binary-validated |
+
+AuthZEN's conformance program is still developing. A denied request does not become an allow merely because approval exists: the client supplies new evidence and the PDP evaluates again. This is why the lab creates a new, receipt-bound decision instead of mutating the original decision.
+
+## Technology selection guide
+
+| Need | Common choice | Capstone guidance |
+|---|---|---|
+| Interoperable authorization request/decision API | AuthZEN | standardize the boundary; keep policy evaluation behind it |
+| Contextual rules and admission policy | OPA/Rego | validate inputs and keep enforcement obligations at the PEP |
+| Application authorization with typed entities | Cedar | use schemas and inspect evaluation diagnostics |
+| Large relationship graph | OpenFGA | use tuples for eligibility, then intersect with current context and risk |
+| Workload authentication | SPIFFE/SPIRE | preserve the trust-domain-to-bundle binding and attestation freshness |
+| OAuth resource protection and token exchange | an enterprise authorization server plus RFC 8693/8707/9449 controls | narrow audience, scope, lifetime, actor chain, and sender binding |
+| Python contracts and tests | Pydantic, cryptography, pytest | strict immutable models, Ed25519 approval/checkpoint signatures, adversarial tests |
 
 ---
 
@@ -1410,34 +1451,26 @@ executive assurance summary
 
 # 62. What the learner builds
 
-The notebook walks through:
+The notebook follows one transaction rather than presenting disconnected snippets:
 
-1. platform bootstrapping;
-2. registry and lifecycle;
-3. workload identity binding;
-4. token issuance and exchange;
-5. delegation;
-6. ReBAC relationships;
-7. OPA/Cedar-style authorization;
-8. AuthZEN-style request/decision model;
-9. secure RAG;
-10. secure tool gateway;
-11. MCP resource binding;
-12. sub-agent delegation;
-13. federation;
-14. HITL payment approval;
-15. OpenTelemetry-style events;
-16. identity graph;
-17. attack paths;
-18. detections;
-19. quarantine;
-20. revocation;
-21. recovery;
-22. compliance tests;
-23. evidence integrity;
-24. audit pack;
-25. production scorecard;
-26. adversarial end-to-end exercise.
+1. measure the intentionally unsafe token-presence baseline;
+2. create strict identity, workload, delegation, token, intent, and decision contracts;
+3. prove lifecycle versioning, workload binding, delegation attenuation, and sender/audience restriction;
+4. compose relationship, risk, tool, federation, and current-state evidence in the PDP;
+5. stop a high-risk payment, issue a signed exact-request approval, consume it once, and re-evaluate;
+6. enforce field/amount constraints at the protected resource;
+7. retry safely with a stable operation ID and reconcile a lost response;
+8. authorize before RAG, memory, MCP, or partner access;
+9. produce minimized correlated telemetry and an authoritative containment workflow;
+10. hash-link evidence and bind its expected count and terminal root in a signed checkpoint;
+11. block release if required evidence or safe evaluation results are missing; and
+12. run the full adversarial matrix and compare it with the weak baseline.
+
+### Failure injection and reflection
+
+The exercises deliberately inject cross-tenant context, wrong workloads, stale attestations, widened/expired authority, missing relationships, wrong token audience or sender, token revocation, critical risk, prompt identity spoofing, stale federation metadata, untrusted anchors, approval replay, changed parameters, policy drift, constraint violations, and unknown write outcomes.
+
+After each boundary, ask: which fact was trusted, which component established it, which component enforced it, and which independent evidence proves that no unintended effect occurred?
 
 ---
 
@@ -1476,8 +1509,10 @@ If the platform cannot answer that consistently, it is not enterprise-ready.
 
 - NIST NCCoE — Software and AI Agent Identity and Authorization  
   https://www.nccoe.nist.gov/projects/software-and-ai-agent-identity-and-authorization
-- NIST 2026 Concept Paper  
-  https://csrc.nist.gov/pubs/other/2026/02/05/accelerating-the-adoption-of-software-and-ai-agent/ipd
+- NIST AI Agent Standards Initiative
+  https://www.nist.gov/artificial-intelligence/ai-agent-standards-initiative
+- NIST September 2026 project update
+  https://www.nist.gov/news-events/news/2026/09/comments-software-and-agentic-ai-identity-concept-paper
 - NIST SP 800-207  
   https://csrc.nist.gov/pubs/sp/800/207/final
 - SPIFFE Standard  
@@ -1488,6 +1523,10 @@ If the platform cannot answer that consistently, it is not enterprise-ready.
   https://spiffe.io/docs/latest/spiffe-specs/spiffe_federation/
 - OpenID AuthZEN Authorization API 1.0  
   https://openid.net/specs/authorization-api-1_0.html
+- OpenID AuthZEN specifications
+  https://openid.net/wg/authzen/specifications/
+- OpenID AuthZEN conformance testing
+  https://openid.net/certification/authzen_testing/
 - OpenID Federation 1.1  
   https://openid.net/specs/openid-federation-1_1-final.html
 - OpenID Shared Signals  
@@ -1501,7 +1540,7 @@ If the platform cannot answer that consistently, it is not enterprise-ready.
 - MCP Authorization  
   https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization
 - OpenTelemetry GenAI Semantic Conventions  
-  https://opentelemetry.io/docs/specs/semconv/gen-ai/
+  https://github.com/open-telemetry/semantic-conventions-genai
 - Open Policy Agent  
   https://www.openpolicyagent.org/
 - Cedar  

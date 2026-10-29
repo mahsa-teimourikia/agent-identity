@@ -2,7 +2,9 @@
   "corp.example": {
     "status": "active",
     "type": "spiffe",
-    "local": true
+    "local": true,
+    "bundle_digest": "sha256:corp-demo-bundle",
+    "metadata_version": 8
   },
   "partner.example": {
     "status": "active",
@@ -10,7 +12,11 @@
     "allowed_agent_types": [
       "research"
     ],
-    "max_delegation_depth": 1
+    "max_delegation_depth": 1,
+    "trust_anchor": "https://federation.corp.example",
+    "bundle_digest": "sha256:partner-demo-bundle",
+    "maximum_metadata_age_seconds": 3600,
+    "metadata_version": 3
   },
   "oldvendor.example": {
     "status": "disabled",

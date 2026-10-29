@@ -1,28 +1,55 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Privacy-minimized agent identity event",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "schema",
     "event_type",
     "timestamp",
     "trace_id",
-    "actor"
+    "tenant_id",
+    "agent_id",
+    "workload_id",
+    "task_id",
+    "operation_id",
+    "evidence_ids",
+    "details"
   ],
   "properties": {
     "schema": {
-      "const": "agent.identity.event/1.0"
+      "const": "agent.identity.event/2.0"
     },
     "event_type": {
       "type": "string"
     },
     "timestamp": {
-      "type": "string"
+      "type": "string",
+      "format": "date-time"
     },
     "trace_id": {
       "type": "string"
     },
-    "actor": {
-      "type": "object"
+    "tenant_id": {"type": "string", "minLength": 1},
+    "principal_id": {"type": ["string", "null"]},
+    "agent_id": {"type": "string", "minLength": 1},
+    "workload_id": {"type": "string", "minLength": 1},
+    "task_id": {"type": "string", "minLength": 1},
+    "operation_id": {"type": "string", "minLength": 1},
+    "decision_id": {"type": ["string", "null"]},
+    "policy_version": {"type": ["string", "null"]},
+    "evidence_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "details": {
+      "type": "object",
+      "not": {
+        "anyOf": [
+          {"required": ["access_token"]},
+          {"required": ["refresh_token"]},
+          {"required": ["authorization"]},
+          {"required": ["client_secret"]},
+          {"required": ["private_key"]}
+        ]
+      }
     }
   }
 }

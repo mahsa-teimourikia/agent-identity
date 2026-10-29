@@ -1,10 +1,15 @@
 {
-  "resource": "https://mcp.claims.example",
+  "resource": "https://mcp.claims.example/mcp",
   "authorization_servers": [
     "https://id.corp.example"
   ],
   "scopes_supported": [
     "knowledge.search",
-    "claims.read"
-  ]
+    "claim.read",
+    "claim.update",
+    "payment.create"
+  ],
+  "bearer_methods_supported": ["header"],
+  "resource_name": "Northstar Claims MCP Gateway",
+  "resource_documentation": "https://mcp.claims.example/docs/security"
 }

@@ -4,17 +4,27 @@ permit (
   resource
 )
 when {
-  principal.registered &&
-  context.workloadApproved &&
-  context.tenantMatch &&
-  context.delegationValid &&
-  context.risk == "low"
+  principal.state == "active" &&
+  principal.tenantId == resource.tenantId &&
+  context.workload.agentId == principal.agentId &&
+  context.workload.approved &&
+  context.workload.attestationFresh &&
+  context.delegation.current &&
+  context.delegation.tenantId == principal.tenantId &&
+  context.relationshipAssigned &&
+  context.expectedTool == context.requestedTool &&
+  context.risk == "low" &&
+  context.requestDigest == context.decisionRequestDigest &&
+  context.policyVersion == context.decisionPolicyVersion
 };
 
 forbid (principal, action, resource)
 when {
-  principal.quarantined ||
-  principal.revoked ||
+  principal.state == "quarantined" ||
+  principal.state == "revoked" ||
   context.credentialRevoked ||
-  context.crossTenant
+  context.crossTenant ||
+  !context.workload.attestationFresh ||
+  !context.delegation.current ||
+  context.risk == "critical"
 };

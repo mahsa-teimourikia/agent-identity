@@ -3,6 +3,10 @@ model
 
 type user
 
+type tenant
+  relations
+    define member: [user]
+
 type agent
   relations
     define operator: [user]
@@ -10,18 +14,18 @@ type agent
 
 type task
   relations
-    define owner: [user]
+    define initiator: [user]
     define assigned_agent: [agent]
-    define can_read_claim: [claim]
-    define can_update_claim: [claim]
+    define can_execute: assigned_agent
 
 type claim
   relations
+    define tenant: [tenant]
     define assignee: [user]
     define reader: [user, agent]
     define editor: [user, agent]
-    define can_read: reader or editor
-    define can_update: editor
+    define can_read: assignee or reader or editor
+    define can_update: assignee or editor
 
 type tool
   relations
