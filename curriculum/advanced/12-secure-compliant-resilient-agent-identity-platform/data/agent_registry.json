@@ -1,5 +1,7 @@
 {
   "agent:claims-orchestrator": {
+    "tenant_id": "northstar",
+    "version": 4,
     "registered": true,
     "owner": "claims-ai",
     "purpose": "claims processing",
@@ -15,6 +17,8 @@
     "monitoring": true
   },
   "agent:research": {
+    "tenant_id": "northstar",
+    "version": 2,
     "registered": true,
     "owner": "claims-ai",
     "purpose": "claims research",
@@ -30,6 +34,8 @@
     "monitoring": true
   },
   "agent:legacy": {
+    "tenant_id": "northstar",
+    "version": 9,
     "registered": true,
     "owner": "",
     "purpose": "legacy integration",

@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Course AuthZEN-style evaluation request",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "subject",
     "action",
@@ -9,16 +11,45 @@
   ],
   "properties": {
     "subject": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"const": "agent"},
+        "id": {"type": "string", "minLength": 1},
+        "tenant_id": {"type": "string", "minLength": 1},
+        "workload_id": {"type": "string", "pattern": "^spiffe://"}
+      }
     },
     "action": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {"name": {"type": "string", "minLength": 1}}
     },
     "resource": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 1},
+        "tenant_id": {"type": "string", "minLength": 1}
+      }
     },
     "context": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principal_id", "task_id", "operation_id", "purpose", "tool"],
+      "properties": {
+        "principal_id": {"type": "string", "minLength": 1},
+        "task_id": {"type": "string", "minLength": 1},
+        "operation_id": {"type": "string", "minLength": 1},
+        "purpose": {"type": "string", "minLength": 1},
+        "tool": {"type": "string", "minLength": 1},
+        "delegation_id": {"type": ["string", "null"]},
+        "risk": {"enum": ["low", "high", "critical"]}
+      }
     }
   }
 }

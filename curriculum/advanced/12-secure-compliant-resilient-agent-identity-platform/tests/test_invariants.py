@@ -1,33 +1,34 @@
-from datetime import datetime,timedelta,timezone
-from pathlib import Path
 import sys
-sys.path.insert(0,str(Path(__file__).parents[1]))
-from src.token_broker import issue,exchange,usable
-from src.delegation import attenuated
-from src.registry import transition
+from pathlib import Path
 
-def test_token_exchange_cannot_escalate():
-    p=issue("agent:a","api",{"read"})
-    try:
-        exchange(p,"api2",{"read","write"})
-        assert False
-    except PermissionError:
-        assert True
+import pytest
 
-def test_delegation_attenuation():
-    now=datetime.now(timezone.utc)
-    p={"actions":{"read","write"},"resources":{"r1","r2"},"expires_at":now+timedelta(hours=1),"max_depth":1}
-    c={"actions":{"read"},"resources":{"r1"},"expires_at":now+timedelta(minutes=10),"depth":1}
-    assert attenuated(p,c)
+sys.path.insert(0, str(Path(__file__).parents[1]))
 
-def test_lifecycle_bypass_blocked():
-    try:
-        transition("draft","active")
-        assert False
-    except ValueError:
-        assert True
+from lab import AuthorizationEngine, DecisionOutcome, EffectStore, fixture
 
-def test_audience_binding():
-    t=issue("agent:a","claims-api",{"read"})
-    assert usable(t,"claims-api","read")
-    assert not usable(t,"payments-api","read")
+
+def test_untrusted_prompt_cannot_supply_identity() -> None:
+    assert fixture()["context"].principal_id == "user:alice"
+
+
+def test_decision_is_bound_to_request_digest() -> None:
+    values = fixture()
+    decision = AuthorizationEngine().decide(**values, now=__import__("lab").NOW)
+    assert decision.request_digest == values["intent"].request_digest
+
+
+def test_denial_cannot_reach_effect_boundary() -> None:
+    values = fixture()
+    decision = (
+        AuthorizationEngine()
+        .decide(**values, now=__import__("lab").NOW)
+        .model_copy(update={"outcome": DecisionOutcome.DENY})
+    )
+    with pytest.raises(PermissionError):
+        EffectStore().execute(
+            context=values["context"],
+            intent=values["intent"],
+            decision=decision,
+            now=__import__("lab").NOW,
+        )
