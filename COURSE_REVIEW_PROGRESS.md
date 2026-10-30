@@ -2,23 +2,45 @@
 
 This ledger tracks the sequential deep review of the curriculum. A course is complete only when its important claims map to teaching material, an implemented control, an executable learner experience, and verification evidence.
 
+The sequential review finished on October 28, 2026. All 31 published courses now have a deep-review merge: six beginner courses, thirteen intermediate courses, and twelve advanced courses. The final reviewed repository passed 1,544 tracked tests, executed all 31 notebooks, regenerated 140 checkpoint questions, and deployed the Learning Hub successfully.
+
 ## Status
 
-| Course | Status | Review focus |
+| Course | Status | Review PR |
 | --- | --- | --- |
-| Beginner 01 — Agent Identity Foundations | Deep pass complete | Evidence-bound identity, delegation, failure cases, measurable evaluation |
-| Beginner 02 — Humans, Workloads and Agents | Deep pass complete | Principal taxonomy, multi-hop provenance, deployment and delegation relationships |
-| Beginner 03 — Authentication, Credentials and Tokens | Deep pass complete | Token profiles, issuer-bound key selection, rotation, replay, observable decisions |
-| Beginner 04 — Authorization for Agents | Deep pass complete | Default deny, policy models, scoped delegation, approval receipts, PEP/PDP enforcement |
-| Beginner 05 — Least-Privilege Tool Access | Deep pass complete | Tool discovery/execution, typed contracts, credentials, egress, approval, budgets, verified effects |
-| Beginner 06 — Agent Identity Lifecycle | Deep pass complete | Governed state transitions, exact approvals, attested provisioning, recertification, revocation, verified retirement |
-| Intermediate 01 — Workload Identity with SPIFFE & SPIRE | Deep pass complete | Attestation, unambiguous registration, SVID verification, full-state updates, rotation, federation |
-| Intermediate 02 — Agent Authentication with OAuth 2.0 & OIDC | Deep pass complete | Transaction binding, token profiles, broker attenuation, DPoP, resource authorization, MCP |
-| Intermediate 03 — Token Exchange, Delegation & Impersonation | Deep pass complete | RFC 8693 profiles, actor chains, multidimensional attenuation, exact approval, idempotency, revocation |
-| Intermediate 04 — Fine-Grained Authorization with OPA, Cedar & OpenFGA | Deep pass complete | Trusted authorization tuple, engine semantics, object policy, consistency, obligations |
-| Intermediate 05 — Dynamic Authorization & Continuous Access Evaluation | Deep pass complete | SET validation, durable projection, domain ordering, decision leases, commit-time reauthorization |
-| Intermediate 06 — MCP Tool Authorization | Next | Discovery versus execution, server-side PEPs, tool arguments, resources, transport, current authority |
-| Remaining courses | Queued in curriculum order | Reviewed after prerequisites are stable |
+| Beginner 01 — Agent Identity Foundations | Deep pass complete | [#8](https://github.com/mahsa-teimourikia/agent-identity/pull/8) |
+| Beginner 02 — Humans, Workloads and Agents | Deep pass complete | [#9](https://github.com/mahsa-teimourikia/agent-identity/pull/9) |
+| Beginner 03 — Authentication, Credentials and Tokens | Deep pass complete | [#10](https://github.com/mahsa-teimourikia/agent-identity/pull/10) |
+| Beginner 04 — Authorization for Agents | Deep pass complete | [#11](https://github.com/mahsa-teimourikia/agent-identity/pull/11) |
+| Beginner 05 — Least-Privilege Tool Access | Deep pass complete | [#12](https://github.com/mahsa-teimourikia/agent-identity/pull/12) |
+| Beginner 06 — Agent Identity Lifecycle | Deep pass complete | [#13](https://github.com/mahsa-teimourikia/agent-identity/pull/13) |
+| Intermediate 01 — Workload Identity with SPIFFE & SPIRE | Deep pass complete | [#14](https://github.com/mahsa-teimourikia/agent-identity/pull/14) |
+| Intermediate 02 — Agent Authentication with OAuth 2.0 & OIDC | Deep pass complete | [#15](https://github.com/mahsa-teimourikia/agent-identity/pull/15) |
+| Intermediate 03 — Token Exchange, Delegation & Impersonation | Deep pass complete | [#16](https://github.com/mahsa-teimourikia/agent-identity/pull/16) |
+| Intermediate 04 — Fine-Grained Authorization with OPA, Cedar & OpenFGA | Deep pass complete | [#17](https://github.com/mahsa-teimourikia/agent-identity/pull/17) |
+| Intermediate 05 — Dynamic Authorization & Continuous Access Evaluation | Deep pass complete | [#18](https://github.com/mahsa-teimourikia/agent-identity/pull/18) |
+| Intermediate 06 — MCP Tool Authorization | Deep pass complete | [#19](https://github.com/mahsa-teimourikia/agent-identity/pull/19) |
+| Intermediate 07 — Risk, Assurance & Step-Up | Deep pass complete | [#20](https://github.com/mahsa-teimourikia/agent-identity/pull/20) |
+| Intermediate 08 — Workload Assurance & Runtime Attestation | Deep pass complete | [#21](https://github.com/mahsa-teimourikia/agent-identity/pull/21) |
+| Intermediate 09 — Authorization Governance | Deep pass complete | [#22](https://github.com/mahsa-teimourikia/agent-identity/pull/22) |
+| Intermediate 10 — Authorization Observability, Audit & Analytics | Deep pass complete | [#23](https://github.com/mahsa-teimourikia/agent-identity/pull/23) |
+| Intermediate 11 — Adversarial Authorization Testing | Deep pass complete | [#24](https://github.com/mahsa-teimourikia/agent-identity/pull/24) |
+| Intermediate 12 — Integrating Authorization, Agents & Guardrails | Deep pass complete | [#25](https://github.com/mahsa-teimourikia/agent-identity/pull/25) |
+| Intermediate 13 — Capstone: Secure Agent Identity | Deep pass complete | [#26](https://github.com/mahsa-teimourikia/agent-identity/pull/26) |
+| Advanced 01 — Advanced Authorization Models | Deep pass complete | [#27](https://github.com/mahsa-teimourikia/agent-identity/pull/27) |
+| Advanced 02 — Cryptographic Delegation & Capabilities | Deep pass complete | [#28](https://github.com/mahsa-teimourikia/agent-identity/pull/28) |
+| Advanced 03 — Cross-Domain Identity Federation | Deep pass complete | [#29](https://github.com/mahsa-teimourikia/agent-identity/pull/29) |
+| Advanced 04 — Agent Attestations & Verifiable Credentials | Deep pass complete | [#30](https://github.com/mahsa-teimourikia/agent-identity/pull/30) |
+| Advanced 05 — Continuous Adaptive Trust | Deep pass complete | [#31](https://github.com/mahsa-teimourikia/agent-identity/pull/31) |
+| Advanced 06 — Decentralized Identity & Multi-Agent Trust | Deep pass complete | [#32](https://github.com/mahsa-teimourikia/agent-identity/pull/32) |
+| Advanced 07 — Non-Human Identity Security & Key Management | Deep pass complete | [#33](https://github.com/mahsa-teimourikia/agent-identity/pull/33) |
+| Advanced 08 — Agent Identity Lifecycle Governance | Deep pass complete | [#34](https://github.com/mahsa-teimourikia/agent-identity/pull/34) |
+| Advanced 09 — Security Posture & Threat Defense | Deep pass complete | [#35](https://github.com/mahsa-teimourikia/agent-identity/pull/35) |
+| Advanced 10 — Identity Observability, Telemetry & Forensics | Deep pass complete | [#36](https://github.com/mahsa-teimourikia/agent-identity/pull/36) |
+| Advanced 11 — Compliance, Audit & Forensic Readiness | Deep pass complete | [#37](https://github.com/mahsa-teimourikia/agent-identity/pull/37) |
+| Advanced 12 — Secure, Compliant & Resilient Agent Identity Platform | Deep pass complete | [#38](https://github.com/mahsa-teimourikia/agent-identity/pull/38) |
+
+The detailed records below preserve the early course claim-to-proof maps. Every later review is linked above to its exact pull request, validation record, and reviewed head revision.
 
 ## Beginner 01 — claim-to-proof map
 
@@ -244,4 +266,4 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 
 ## Review sequence
 
-Each subsequent course will be audited against its immediate prerequisites and successor. The implementation pass will update the chapter, lab, notebook, tests, checkpoint, references, and Hub metadata together so the learner path and code cannot silently drift apart.
+The planned sequence is complete. Future course changes should continue to update the chapter, reusable lab, notebook, tests, checkpoint, references, and Learning Hub metadata together, and should add a new review record rather than changing a completed course back to “queued.”
