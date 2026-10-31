@@ -1,137 +1,229 @@
-import os
-import glob
-import re
+"""Generate deterministic Learning Hub and quiz data from the curriculum."""
+
+from __future__ import annotations
+
 import json
-import sys
+import re
+from pathlib import Path
+from typing import Iterable
+from urllib.parse import urlparse
 
-# Import custom questions
-try:
-    from custom_questions import get_questions_for_module
-except ImportError:
-    def get_questions_for_module(mod):
-        return [("What is a primary focus of this module?", ["The concepts taught in this module.", "An unrelated topic.", "Nothing."], 0, "Refer to the module README.")]
+from custom_questions import get_questions_for_module
 
-def parse_curriculum():
-    levels = ['beginner', 'intermediate', 'advanced']
-    lessons = []
-    questions = []
+
+ROOT = Path(__file__).resolve().parents[1]
+LEVELS = ("beginner", "intermediate", "advanced")
+REPO = "https://github.com/mahsa-teimourikia/agent-identity/blob/main/"
+
+
+def _plain(text: str) -> str:
+    text = re.sub(r"\[([^]]+)]\([^)]+\)", r"\1", text)
+    text = re.sub(r"[`*_]", "", text)
+    return re.sub(r"\s+", " ", text).strip(" -;.")
+
+
+def _goal(content: str, title: str) -> str:
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        if re.search(r"\*\*Goal:\*\*", line, re.IGNORECASE):
+            parts = [re.sub(r"^\s*>\s*", "", line)]
+            cursor = index + 1
+            while cursor < len(lines) and re.match(r"^\s*>", lines[cursor]):
+                parts.append(re.sub(r"^\s*>\s*", "", lines[cursor]))
+                cursor += 1
+            goal = re.sub(r".*?\*\*Goal:\*\*\s*", "", " ".join(parts), flags=re.IGNORECASE)
+            return _plain(goal)
+    return f"Learn the concepts, controls, and practical implementation patterns in {title}"
+
+
+def _section(content: str, names: Iterable[str]) -> str:
+    accepted = {name.casefold() for name in names}
+    lines = content.splitlines()
+    for index, line in enumerate(lines):
+        heading = re.match(r"^(#{1,4})\s+(.+?)\s*$", line)
+        if not heading or _plain(heading.group(2)).casefold() not in accepted:
+            continue
+        depth = len(heading.group(1))
+        collected: list[str] = []
+        for candidate in lines[index + 1 :]:
+            next_heading = re.match(r"^(#{1,4})\s+", candidate)
+            if next_heading and len(next_heading.group(1)) <= depth:
+                break
+            collected.append(candidate)
+        return "\n".join(collected)
+    return ""
+
+
+def _list_items(text: str, limit: int = 6) -> list[str]:
+    items: list[str] = []
+    current = ""
+    for line in text.splitlines():
+        marker = re.match(r"^\s*(?:[-*]|\d+[.)])\s+(.+)", line)
+        if marker:
+            if current:
+                items.append(_plain(current))
+            current = marker.group(1)
+        elif current and line.strip() and not line.lstrip().startswith(("#", "```")):
+            current += " " + line.strip()
+        elif current:
+            items.append(_plain(current))
+            current = ""
+    if current:
+        items.append(_plain(current))
+    return [item for item in items if len(item) > 12][:limit]
+
+
+def _outcomes(content: str, goal: str) -> list[str]:
+    section = _section(content, ("Learning outcomes", "Learning objectives", "What you will learn"))
+    if not section:
+        match = re.search(
+            r"(?:By the end[^:]*|After this course[^:]*)\s*:\s*\n(.*?)(?=^##\s+|\Z)",
+            content,
+            re.IGNORECASE | re.MULTILINE | re.DOTALL,
+        )
+        section = match.group(1) if match else ""
+    items = _list_items(section)
+    if not items and section:
+        narrative = _plain(section).removeprefix("You will learn to ")
+        items = [item.strip() for item in re.split(r";\s*|;?\s+and\s+", narrative) if len(item.strip()) > 12][:6]
+    if not items:
+        items = _list_items(_section(content, ("Success criteria", "Capstone contract")))
+    return items if items else [goal]
+
+
+def _references(content: str) -> list[dict[str, str]]:
+    reference_section = _section(content, ("References", "Sources", "Further reading"))
+    haystack = reference_section or content
+    found: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for label, url in re.findall(r"\[([^]]+)]\((https?://[^)]+)\)", haystack):
+        url = url.strip()
+        if url in seen:
+            continue
+        seen.add(url)
+        found.append({"label": _plain(label), "url": url})
+        if len(found) == 5:
+            break
+    if len(found) < 5:
+        for url in re.findall(r"https?://[^\s)>]+", haystack):
+            url = url.rstrip(".,;]")
+            if url in seen:
+                continue
+            seen.add(url)
+            host = urlparse(url).netloc.removeprefix("www.")
+            found.append({"label": host, "url": url})
+            if len(found) == 5:
+                break
+    return found
+
+
+def _rotate_question(question: tuple, target_index: int) -> dict:
+    text, raw_options, answer, explanation = question
+    options = list(raw_options)
+    if len(options) < 2 or not 0 <= answer < len(options):
+        raise ValueError(f"Invalid answer definition for question: {text}")
+    shift = (target_index - answer) % len(options)
+    rotated = options[-shift:] + options[:-shift] if shift else options
+    return {
+        "text": text.strip(),
+        "options": rotated,
+        "answer": target_index,
+        "explanation": explanation.strip(),
+    }
+
+
+def parse_curriculum() -> tuple[list[dict], list[dict]]:
+    lessons: list[dict] = []
+    questions: list[dict] = []
     step = 1
 
-    for level in levels:
-        dirs = sorted(glob.glob(f"curriculum/{level}/*"))
-        for d in dirs:
-            if not os.path.isdir(d):
+    for level in LEVELS:
+        course_dirs = sorted(path for path in (ROOT / "curriculum" / level).iterdir() if path.is_dir())
+        for level_step, course_dir in enumerate(course_dirs, start=1):
+            readme = course_dir / "README.md"
+            if not readme.exists():
                 continue
-            
-            readme_path = os.path.join(d, "README.md")
-            if not os.path.exists(readme_path):
-                continue
+            content = readme.read_text(encoding="utf-8")
+            module = course_dir.name
+            course_id = f"{level}/{module}"
+            relative = course_dir.relative_to(ROOT).as_posix()
 
-            with open(readme_path, 'r') as f:
-                content = f.read()
+            title_match = re.search(r"^#\s+(.+)$", content, re.MULTILINE)
+            raw_title = title_match.group(1).strip() if title_match else module.replace("-", " ").title()
+            title = re.sub(r"^(?:Beginner|Intermediate|Advanced)\s+\d+\s*[—:-]\s*", "", raw_title).strip()
+            goal = _goal(content, title)
+            outcomes = _outcomes(content, goal)
+            references = _references(content)
 
-            module_dir_name = os.path.basename(d)
+            lab_path = course_dir / "lab.py"
+            notebooks = sorted(course_dir.rglob("*.ipynb"))
+            raw_questions = get_questions_for_module(module)
+            if not raw_questions:
+                raise ValueError(f"No quiz questions defined for {course_id}")
 
-            # Extract title
-            title_match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
-            title = title_match.group(1).split('—')[-1].strip() if title_match else module_dir_name
-
-            # Extract goal/summary
-            goal_match = re.search(r'>\s*\*\*Goal:\*\*\s*(.+?)(?=\n\n|\n>|\Z)', content, re.DOTALL | re.IGNORECASE)
-            if goal_match:
-                summary = goal_match.group(1).strip().replace('\n', ' ')
-            else:
-                summary = f"Learn about {title}"
-
-            detail = summary
-
-            # A course lab is an explicit, reusable root-level entry point. Test
-            # helpers and incidental Python files must not become learner links.
-            lab_file = os.path.join(d, "lab.py")
-            if not os.path.exists(lab_file):
-                lab_file = None
-            ipynb_files = glob.glob(f"{d}/**/*.ipynb", recursive=True)
-
-            ipynb_file = ipynb_files[0] if ipynb_files else None
-            
-            # Repo base
-            repo_base = "${REPO}/blob/main/"
+            normalized_questions: list[dict] = []
+            for local_index, raw_question in enumerate(raw_questions, start=1):
+                normalized = _rotate_question(raw_question, len(questions) % len(raw_question[1]))
+                normalized.update(
+                    {
+                        "id": f"{course_id}/q-{local_index}",
+                        "courseId": course_id,
+                        "courseTitle": title,
+                        "courseStep": step,
+                        "level": level,
+                    }
+                )
+                questions.append(normalized)
+                normalized_questions.append(normalized)
 
             lesson = {
-                'level': level,
-                'step': step,
-                'title': title,
-                'summary': summary[:100] + "..." if len(summary) > 100 else summary,
-                'detail': detail,
-                'material': f"{repo_base}{readme_path}"
+                "id": course_id,
+                "module": module,
+                "level": level,
+                "step": step,
+                "levelStep": level_step,
+                "title": title,
+                "summary": goal,
+                "detail": goal,
+                "outcomes": outcomes,
+                "material": f"{REPO}{relative}/README.md",
+                "references": references,
+                "checkpoint": {
+                    key: normalized_questions[0][key]
+                    for key in ("id", "text", "options", "answer", "explanation")
+                },
             }
-
-            if lab_file:
-                lesson['lab'] = f"{repo_base}{lab_file}"
-                lesson['run'] = f"python3 {lab_file}"
-            
-            if ipynb_file:
-                lesson['notebook'] = f"{repo_base}{ipynb_file}"
-            
-            # Get custom questions
-            custom_qs = get_questions_for_module(module_dir_name)
-            
-            # Use the first question for the lesson checkpoint
-            q_text, q_options, q_answer, q_expl = custom_qs[0]
-            lesson['q'] = [q_text, q_options, q_answer, q_expl]
-
+            if lab_path.exists():
+                lesson["lab"] = f"{REPO}{lab_path.relative_to(ROOT).as_posix()}"
+                lesson["run"] = f"python3 {lab_path.relative_to(ROOT).as_posix()}"
+            if notebooks:
+                lesson["notebook"] = f"{REPO}{notebooks[0].relative_to(ROOT).as_posix()}"
             lessons.append(lesson)
-
-            # Add all questions for this module to the quiz database
-            for cq_text, cq_options, cq_answer, cq_expl in custom_qs:
-                questions.append({
-                    'level': level,
-                    'text': cq_text,
-                    'options': cq_options,
-                    'answer': cq_answer,
-                    'explanation': cq_expl
-                })
-
             step += 1
 
     return lessons, questions
 
-def write_lessons(lessons):
-    lines = []
-    lines.append("const REPO='https://github.com/mahsa-teimourikia/agent-identity';")
-    lines.append("const LESSONS=[")
-    
-    for i, l in enumerate(lessons):
-        props = []
-        for k, v in l.items():
-            if k in ['q', 'step', 'level', 'title', 'summary', 'detail', 'run']:
-                props.append(f"{k}:{json.dumps(v)}")
-            elif k in ['material', 'lab', 'notebook']:
-                escaped_v = v.replace('`', '\\`')
-                props.append(f"{k}:`{escaped_v}`")
 
-        obj_str = "{" + ",".join(props) + "}"
-        lines.append(obj_str + ("," if i < len(lessons)-1 else ""))
-        
-    lines.append("];")
-    
-    with open("hub/lessons.js", "w") as f:
-        f.write("\n".join(lines))
+def _write_javascript(path: Path, declaration: str, value: object, prelude: str = "") -> None:
+    payload = json.dumps(value, ensure_ascii=False, indent=2)
+    path.write_text(f"{prelude}const {declaration} = {payload};\n", encoding="utf-8")
 
-def write_questions(questions):
-    lines = []
-    lines.append("const QUESTIONS=[")
-    for i, q in enumerate(questions):
-        obj_str = json.dumps(q)
-        lines.append(obj_str + ("," if i < len(questions)-1 else ""))
-    lines.append("];")
-    
-    with open("quiz/questions.js", "w") as f:
-        f.write("\n".join(lines))
+
+def write_lessons(lessons: list[dict]) -> None:
+    _write_javascript(
+        ROOT / "hub" / "lessons.js",
+        "LESSONS",
+        lessons,
+        "const REPO = 'https://github.com/mahsa-teimourikia/agent-identity';\n",
+    )
+
+
+def write_questions(questions: list[dict]) -> None:
+    _write_javascript(ROOT / "quiz" / "questions.js", "QUESTIONS", questions)
+
 
 if __name__ == "__main__":
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-    lessons, questions = parse_curriculum()
-    write_lessons(lessons)
-    write_questions(questions)
-    print(f"Generated {len(lessons)} lessons and {len(questions)} questions.")
+    lesson_data, question_data = parse_curriculum()
+    write_lessons(lesson_data)
+    write_questions(question_data)
+    print(f"Generated {len(lesson_data)} lessons and {len(question_data)} questions.")

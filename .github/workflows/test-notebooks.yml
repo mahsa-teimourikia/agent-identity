@@ -9,6 +9,8 @@ on:
       - 'quiz/**'
       - 'scripts/generate_hub_data.py'
       - 'scripts/custom_questions.py'
+      - 'scripts/validate_hub.py'
+      - 'scripts/learning_hub.test.js'
       - 'scripts/validate_notebooks.py'
       - 'pyproject.toml'
       - 'uv.lock'
@@ -20,6 +22,8 @@ on:
       - 'quiz/**'
       - 'scripts/generate_hub_data.py'
       - 'scripts/custom_questions.py'
+      - 'scripts/validate_hub.py'
+      - 'scripts/learning_hub.test.js'
       - 'scripts/validate_notebooks.py'
       - 'pyproject.toml'
       - 'uv.lock'
@@ -39,6 +43,10 @@ jobs:
         run: uv sync
       - name: Validate Notebooks
         run: uv run python scripts/validate_notebooks.py
+      - name: Validate Learning Hub Data
+        run: uv run python scripts/validate_hub.py
+      - name: Test Learning Hub Interactions
+        run: node --test scripts/learning_hub.test.js
       - name: Test Reusable Course Labs
         shell: bash
         run: |

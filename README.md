@@ -6,7 +6,7 @@
 
 **[Open the Agent Identity Learning Hub →](https://mahsa-teimourikia.github.io/agent-identity/)**
 
-Choose Beginner, Intermediate, or Advanced, then work through each lesson's **Learn → Lab → Checkpoint** tabs. The [full interactive quiz](https://mahsa-teimourikia.github.io/agent-identity/quiz/) gives a cumulative knowledge check.
+Search or filter all 31 courses, follow each lesson's **Learn → Lab → Checkpoint** path, and save completion progress in your browser. The [interactive quiz builder](https://mahsa-teimourikia.github.io/agent-identity/quiz/) creates focused 10-, 20-, 40-question, course-specific, level-specific, or full-curriculum knowledge checks from the 140-question bank, with explanations and performance breakdowns.
 
 ## Local Setup
 
