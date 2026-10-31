@@ -4,6 +4,8 @@ This ledger tracks the sequential deep review of the curriculum. A course is com
 
 The sequential review finished on October 28, 2026. All 31 published courses now have a deep-review merge: six beginner courses, thirteen intermediate courses, and twelve advanced courses. The final reviewed repository passed 1,544 tracked tests, executed all 31 notebooks, regenerated 140 checkpoint questions, and deployed the Learning Hub successfully.
 
+The October 30, 2026 repository-baseline review then refreshed the locked dependency set, minimum-version CI, Pages deployment, contributor and security guidance, and root automation. The repository now exposes one reproducible `make ci` gate for structure and link validation, isolated course tests, all notebooks, generated Hub data, quiz tests, and a locked production-dependency vulnerability audit. See [`DEPENDENCIES.md`](DEPENDENCIES.md) for the supported-version and update policy.
+
 ## Status
 
 | Course | Status | Review PR |

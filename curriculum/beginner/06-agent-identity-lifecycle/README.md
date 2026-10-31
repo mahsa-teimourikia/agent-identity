@@ -34,7 +34,7 @@ Complete or review:
 - [Beginner 04 — Authorization for Agents](../04-authorization-for-agents/README.md) for deterministic authorization and approval evidence; and
 - [Beginner 05 — Least-Privilege Tool Access](../05-least-privilege-tool-access/README.md) for bounded capabilities and verified effects.
 
-The lab requires Python 3.10 or newer, Pydantic 2, and pytest. It runs offline and uses no secrets or external services.
+The lab requires Python 3.12 or newer, Pydantic 2, and pytest. It runs offline and uses no secrets or external services.
 
 ---
 

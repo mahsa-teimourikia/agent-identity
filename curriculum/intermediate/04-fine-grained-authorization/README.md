@@ -29,7 +29,7 @@ You will be able to:
 - [Least-Privilege Tool Access](../../beginner/05-least-privilege-tool-access/)
 - [OAuth and OIDC for Agents](../02-oauth-oidc-for-agents/)
 - [Token Exchange, Delegation, and Impersonation](../03-token-exchange-delegation-impersonation/)
-- Python 3.10+
+- Python 3.12+
 
 The next course, [Dynamic Authorization and Continuous Access Evaluation](../05-dynamic-authorization-cae/), adds mid-session signal changes and revocation. This course focuses on one correctly assembled authorization decision and its enforcement.
 

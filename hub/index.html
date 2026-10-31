@@ -1,1 +1,94 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent Identity Learning Hub</title><link rel="stylesheet" href="styles.css"></head><body><header><a class="brand" href="https://oneplusi.io"><img src="assets/one-plus-i.png" alt="One+i"> Learning with One+i · responsible AI, real-world impact</a><h1>Agent identity &amp; authorization</h1><p>Give agents verifiable identity and constrained authority.</p><a href="quiz/">Take the full knowledge check →</a></header><main><nav><button class="active" data-level="all">All</button><button data-level="beginner">Beginner</button><button data-level="intermediate">Intermediate</button><button data-level="advanced">Advanced</button></nav><section id="lessons" class="cards"></section><section id="workspace" hidden><span id="level"></span><h2 id="title"></h2><p id="summary"></p><div class="tabs"><button class="active" data-tab="learn">Learn</button><button data-tab="lab">Lab</button><button data-tab="checkpoint">Checkpoint</button></div><article id="learn"></article><article id="lab" hidden></article><article id="checkpoint" hidden></article></section></main><footer><img src="assets/one-plus-i-light.png" alt="One+i"> <a href="https://oneplusi.io">oneplusi.io ↗</a></footer><script src="lessons.js"></script><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="A practical, source-backed curriculum for engineering secure agent identity and authorization systems.">
+    <title>Agent Identity Learning Hub</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#curriculum">Skip to curriculum</a>
+    <header class="hero">
+      <div class="hero-inner">
+        <a class="brand" href="https://oneplusi.io">
+          <img src="assets/one-plus-i.png" alt="One+i">
+          <span>Learning with One+i · responsible AI, real-world impact</span>
+        </a>
+        <div class="hero-copy">
+          <p class="eyebrow">31-course engineering curriculum</p>
+          <h1>Agent identity &amp; authorization</h1>
+          <p>Build verifiable identity, bounded authority, resilient enforcement, and audit-ready evidence for autonomous agents.</p>
+          <div class="hero-actions">
+            <button class="primary" id="continue" type="button">Start learning</button>
+            <a class="button-link" href="quiz/">Build a knowledge check</a>
+          </div>
+        </div>
+        <section class="progress-card" aria-labelledby="progress-title">
+          <div>
+            <p id="progress-title">Your progress</p>
+            <strong id="progress-count">0 of 31 complete</strong>
+          </div>
+          <progress id="progress" value="0" max="31">0%</progress>
+          <button class="text-button" id="reset-progress" type="button">Reset saved progress</button>
+        </section>
+      </div>
+    </header>
+
+    <main id="curriculum">
+      <section class="catalog" aria-labelledby="catalog-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Curriculum map</p>
+            <h2 id="catalog-title">Choose your next course</h2>
+          </div>
+          <p id="result-count" aria-live="polite"></p>
+        </div>
+        <div class="controls">
+          <label class="search">
+            <span>Search courses</span>
+            <input id="search" type="search" placeholder="Try OAuth, delegation, audit…" autocomplete="off">
+          </label>
+          <div class="level-filters" aria-label="Filter by level">
+            <button class="active" type="button" data-level="all" aria-pressed="true">All</button>
+            <button type="button" data-level="beginner" aria-pressed="false">Beginner</button>
+            <button type="button" data-level="intermediate" aria-pressed="false">Intermediate</button>
+            <button type="button" data-level="advanced" aria-pressed="false">Advanced</button>
+          </div>
+        </div>
+        <div id="lessons" class="cards"></div>
+        <p id="empty-state" class="empty-state" hidden>No courses match those filters. Try a broader search.</p>
+      </section>
+
+      <section id="workspace" class="workspace" aria-labelledby="title" hidden>
+        <div class="course-nav">
+          <button id="previous-course" type="button">← Previous</button>
+          <span id="position"></span>
+          <button id="next-course" type="button">Next →</button>
+        </div>
+        <p id="level" class="eyebrow"></p>
+        <h2 id="title"></h2>
+        <p id="summary" class="course-summary"></p>
+        <button id="complete-course" class="complete-button" type="button"></button>
+
+        <div class="tabs" role="tablist" aria-label="Course resources">
+          <button id="tab-learn" class="active" role="tab" type="button" data-tab="learn" aria-selected="true" aria-controls="learn">Learn</button>
+          <button id="tab-lab" role="tab" type="button" data-tab="lab" aria-selected="false" aria-controls="lab" tabindex="-1">Lab</button>
+          <button id="tab-checkpoint" role="tab" type="button" data-tab="checkpoint" aria-selected="false" aria-controls="checkpoint" tabindex="-1">Checkpoint</button>
+        </div>
+        <article id="learn" role="tabpanel" aria-labelledby="tab-learn"></article>
+        <article id="lab" role="tabpanel" aria-labelledby="tab-lab" hidden></article>
+        <article id="checkpoint" role="tabpanel" aria-labelledby="tab-checkpoint" hidden></article>
+      </section>
+      <p id="status" class="sr-only" aria-live="polite"></p>
+    </main>
+
+    <footer>
+      <img src="assets/one-plus-i-light.png" alt="One+i">
+      <p>Open learning for secure, accountable AI systems · <a href="https://oneplusi.io">oneplusi.io</a></p>
+      <a href="https://github.com/mahsa-teimourikia/agent-identity">View the source on GitHub</a>
+    </footer>
+    <script src="lessons.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

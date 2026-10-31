@@ -9,8 +9,17 @@ assignees: ''
 ## Is your feature request related to a problem? Please describe.
 A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
 
+## Describe the learner outcome
+What should a learner be able to explain, implement, evaluate, or productionize after this change?
+
 ## Describe the solution you'd like
-A clear and concise description of what you want to happen (e.g. a new Jupyter notebook covering Topic X).
+Identify the affected course, lab, notebook, test, Hub, quiz, or repository workflow.
+
+## Evidence and references
+Link primary standards, official documentation, maintained implementations, or research that should inform the change.
+
+## Acceptance criteria
+List the executable behavior, negative cases, evaluation evidence, and documentation needed to consider the work complete.
 
 ## Describe alternatives you've considered
 A clear and concise description of any alternative solutions or features you've considered.

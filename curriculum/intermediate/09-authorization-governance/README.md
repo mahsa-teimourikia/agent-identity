@@ -8,7 +8,7 @@
 | Time | 90–120 minute guided lab; 60–90 minute extension |
 | Format | Concept guide, executed notebook, reusable Python lab, OPA and Cedar policy-as-code, 59 automated checks |
 | Prerequisites | Python, request-time authorization, RBAC/ABAC/ReBAC basics, and policy-as-code familiarity |
-| Local setup | Python 3.10+; no credentials, cloud account, or network calls required by the lab |
+| Local setup | Python 3.12+; no credentials, cloud account, or network calls required by the lab |
 
 Start with the executed [governance notebook](governance_delegation.ipynb), then inspect the reusable [control-plane lab](lab.py), [tests](tests/test_authorization_governance.py), [OPA policy](policies/opa/governance.rego), and [Cedar policy](policies/cedar/governance.cedar).
 

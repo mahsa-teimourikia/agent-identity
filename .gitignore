@@ -36,6 +36,19 @@ venv.bak/
 
 # Pytest
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Linters and type checkers
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# Generated site and reports
+site/
+junit.xml
 
 # OS Files
 .DS_Store
