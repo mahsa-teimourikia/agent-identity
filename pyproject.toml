@@ -5,36 +5,36 @@ description = "Executable curriculum for secure agent identity and authorization
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "authlib>=1.9,<2",
-    "cedarpy>=4.12,<5",
-    "cryptography>=46,<51",
-    "httpx>=0.28,<1",
+    "authlib>=1.9.1,<2",
+    "cedarpy>=4.12.2,<5",
+    "cryptography>=50.0.2,<51",
+    "httpx>=0.28.1,<1",
     "jsonschema>=4.26,<5",
-    "jupyterlab>=4.6,<5",
-    "langchain>=1.4,<1.5",
-    "langgraph>=1.2,<2",
-    "matplotlib>=3.11,<4",
+    "jupyterlab>=4.6.4,<5",
+    "langchain>=1.4.7,<1.5",
+    "langgraph>=1.2.18,<2",
+    "matplotlib>=3.11.2,<4",
     "mcp>=2.3,<3",
     "networkx>=3.7,<4",
     "opa-python-client>=3,<4",
     "openai-agents>=0.24,<0.25",
-    "openfga-sdk>=0.10,<1",
-    "opentelemetry-api>=1.45,<2",
-    "opentelemetry-exporter-otlp>=1.45,<2",
-    "opentelemetry-sdk>=1.45,<2",
+    "openfga-sdk>=0.10.5,<1",
+    "opentelemetry-api>=1.45.1,<2",
+    "opentelemetry-exporter-otlp>=1.45.1,<2",
+    "opentelemetry-sdk>=1.45.1,<2",
     "pandas>=3.1,<4",
-    "pydantic>=2.14,<3",
-    "pyjwt[crypto]>=2.15,<3",
+    "pydantic>=2.14.1,<3",
+    "pyjwt[crypto]>=2.15.1,<3",
     "pymacaroons>=0.13,<1",
     "pytest>=9.2,<10",
     "PyYAML>=6.0.3,<7",
-    "requests>=2.34,<3",
+    "requests>=2.34.2,<3",
     "rich>=15,<16",
     "tabulate>=0.10,<1"
 ]
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.170,<7",
-    "packaging>=26,<27",
+    "hypothesis>=6.170.12,<7",
+    "packaging>=26.3,<27",
 ]
