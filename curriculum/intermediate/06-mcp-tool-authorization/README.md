@@ -26,7 +26,7 @@ By the end, you can:
 
 ## Prerequisites
 
-Complete Intermediate 02–05 or be comfortable with OAuth resource indicators, delegated tokens, fine-grained authorization, and continuous authorization. You need Python 3.10+ and `uv` for the lab. OPA is optional for the Rego exercise.
+Complete Intermediate 02–05 or be comfortable with OAuth resource indicators, delegated tokens, fine-grained authorization, and continuous authorization. You need Python 3.12+ and `uv` for the lab. OPA is optional for the Rego exercise.
 
 ## Start here
 

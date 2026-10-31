@@ -22,7 +22,7 @@ A clear and concise description of what you expected to happen.
 ## Environment
 
  - OS: [e.g. macOS, Windows, Linux]
- - Python version: [e.g. 3.10, 3.13]
+ - Python version: [e.g. 3.12, 3.14]
  - `uv` version:
  - Node.js version (for Hub/quiz issues):
  - Browser (if applicable): [e.g. chrome, safari]

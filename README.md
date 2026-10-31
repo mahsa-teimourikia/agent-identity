@@ -34,7 +34,7 @@ Prompts, tool arguments, retrieved content, schemas, and model output remain unt
 
 Prerequisites:
 
-- Python 3.10 or newer;
+- Python 3.12 or newer;
 - [uv](https://docs.astral.sh/uv/getting-started/installation/); and
 - Node.js 24 or newer for the browser-independent Hub tests.
 

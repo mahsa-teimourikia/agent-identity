@@ -12,9 +12,9 @@ Use the lockfile for normal development and CI. Do not install every course requ
 
 ## Supported runtime
 
-The project supports Python 3.10 and newer. The lockfile may select newer releases on newer interpreters when a package has raised its Python minimum. For example, the Python 3.10 resolution intentionally retains compatible NetworkX, pandas, Matplotlib, and Hypothesis releases while Python 3.11+ or 3.12+ can use newer locked variants.
+The project supports Python 3.12 and newer. The minimum was raised during the October 30, 2026 baseline review so the curriculum can use supported Pillow and Tornado releases and the current scientific and graph stack instead of retaining vulnerable or superseded Python 3.10 transitive dependencies. The checked-in `.python-version` keeps local `uv` commands on the tested minimum.
 
-The direct Python 3.10 environment reviewed on October 30, 2026 includes:
+The direct Python 3.12 environment reviewed on October 30, 2026 includes:
 
 | Integration | Tested version |
 | --- | ---: |
@@ -24,14 +24,18 @@ The direct Python 3.10 environment reviewed on October 30, 2026 includes:
 | JupyterLab | 4.6.5 |
 | LangChain | 1.4.7 |
 | LangGraph | 1.2.19 |
+| Matplotlib | 3.11.2 |
 | MCP Python SDK | 2.3.0 |
+| NetworkX | 3.7 |
 | OPA Python client | 3.0.0 |
 | OpenAI Agents SDK | 0.24.0 |
 | OpenFGA SDK | 0.10.5 |
 | OpenTelemetry | 1.45.2 |
+| pandas | 3.1.0 |
 | Pydantic | 2.14.2 |
 | PyJWT | 2.15.1 |
 | pytest | 9.2.0 |
+| Hypothesis | 6.170.14 |
 
 Run `uv tree --depth 1` for the complete direct resolution on your interpreter.
 

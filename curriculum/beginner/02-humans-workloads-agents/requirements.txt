@@ -1,2 +1,2 @@
 # Standard-library lab
-# Python >= 3.10 recommended
+# Python >= 3.12 required by the repository baseline.

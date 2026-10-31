@@ -11,7 +11,7 @@ Thank you for improving the curriculum. Every change should preserve the reposit
 
 ## Development setup
 
-Install Python 3.10+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and Node.js 24+, then run:
+Install Python 3.12+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and Node.js 24+, then run:
 
 ```bash
 make setup

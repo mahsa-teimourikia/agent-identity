@@ -7,16 +7,11 @@ import importlib.metadata
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10
-    import tomli as tomllib
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
