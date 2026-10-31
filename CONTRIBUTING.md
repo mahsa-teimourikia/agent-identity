@@ -1,45 +1,69 @@
-# Contributing to Agent Identity and Authorization Labs
+# Contributing to Agent Identity and Authorization
 
-First off, thank you for considering contributing to this repository! It's people like you that make this curriculum better for everyone.
+Thank you for improving the curriculum. Every change should preserve the repository as both a teaching product and an executable system.
 
-## Code of Conduct
+## Before you begin
 
-By participating in this project, you are expected to uphold our [Code of Conduct](CODE_OF_CONDUCT.md). Please report unacceptable behavior to the project maintainers.
+- Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Use synthetic data and credential-free defaults.
+- Report security issues privately according to [SECURITY.md](SECURITY.md).
+- Open an issue before adding or substantially reordering a course.
 
-## How Can I Contribute?
+## Development setup
 
-### Reporting Bugs
-If you find a bug in the curriculum, a broken link, or an issue with the local setup, please open an issue on GitHub. Include as much detail as possible, such as:
-- Which module/notebook you were working on.
-- The error message you received.
-- Your OS and Python version.
-
-### Suggesting Enhancements
-Have an idea for a new module, or a way to improve an existing lesson? We'd love to hear it! Open an issue to discuss your ideas before writing any code.
-
-### Pull Requests
-1. **Fork the repository** and clone it locally.
-2. **Set up your environment**: We use `uv` for centralized dependency management. Run `make setup` in the root directory to bootstrap your virtual environment.
-3. **Make your changes**: 
-   - If you are modifying curriculum notebooks (`curriculum/**/*.ipynb`), please ensure your changes are clear and educational.
-   - If you are adding a new notebook, ensure it follows the structure of existing labs.
-4. **Test your changes**: Run `make jupyter` to test your notebooks locally. Before committing, ensure the validation script passes by running `uv run python scripts/validate_notebooks.py`.
-5. **Commit and Push**: Create a feature branch (`git checkout -b feature/your-feature-name`), commit your changes, and push them to your fork.
-6. **Open a PR**: Open a Pull Request against our `main` branch. A template will automatically populate to help you describe your changes. Our CI/CD pipeline will automatically validate your notebooks.
-
-## Development Setup
-
-The entire repository uses a unified virtual environment managed by `uv`.
+Install Python 3.10+, [uv](https://docs.astral.sh/uv/getting-started/installation/), and Node.js 24+, then run:
 
 ```bash
-# Set up the environment and install all dependencies
 make setup
-
-# Sync dependencies if pyproject.toml changes
-make sync
-
-# Start Jupyter Lab to view/edit notebooks
-make jupyter
+make validate
 ```
 
-Thank you for your contributions!
+Use `make help` to see all supported workflows. The canonical environment comes from `pyproject.toml` and `uv.lock`; see [DEPENDENCIES.md](DEPENDENCIES.md) before changing versions.
+
+## Course changes
+
+Keep a course's learner path synchronized:
+
+1. README chapter and authoritative references;
+2. one primary notebook;
+3. reusable `lab.py` implementation;
+4. fixtures, policies, and focused invariant tests;
+5. course-local `requirements.txt`;
+6. checkpoint and full-quiz questions; and
+7. Hub metadata and curriculum navigation.
+
+The notebook must import the reusable lab, run without credentials, explain design choices before code, interpret results after code, inject at least one realistic failure, evaluate labelled cases, and distinguish teaching fixtures from production controls. Model output may propose actions; deterministic application code must validate, authorize, execute, verify, and record them.
+
+Do not commit notebook checkpoints, local environments, generated `site/` output, secrets, production data, or duplicate files with suffixes such as ` 2` or ` 3`.
+
+## Validation
+
+During development, run the narrowest relevant checks. Before opening a pull request, run the complete gate:
+
+```bash
+make ci
+```
+
+That command verifies the lockfile, repository structure and local links, Hub and quiz data, all isolated course tests, all notebooks, and known dependency advisories. To build the production-equivalent Pages artifact separately:
+
+```bash
+make site
+```
+
+If a check cannot run, state exactly why in the pull request. Do not label an unexecuted check as passed.
+
+## Pull requests
+
+Create a focused branch and use the pull request template. The description must retain these sections:
+
+- Context
+- What changed
+- Validation performed
+- Deployment impact
+- Review focus
+
+Include exact commands and results. Curriculum changes should identify the affected course, learner outcome, executable evidence, negative tests, and any dependency or deployment impact. Preserve unrelated working-tree changes.
+
+## Reporting bugs
+
+Include the course path, commit SHA, exact command, expected result, observed result, operating system, Python version, and `uv` version. For Hub issues, include the browser and route. Never include access tokens or other secrets in an issue.

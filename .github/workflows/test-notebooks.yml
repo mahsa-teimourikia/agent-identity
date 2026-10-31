@@ -1,58 +1,64 @@
-name: Test Notebooks
+name: Validate Repository
 
 on:
   push:
+    branches: [main]
     paths:
-      - 'curriculum/**/*.ipynb'
-      - 'curriculum/**/*.py'
+      - '.github/**'
+      - 'curriculum/**'
       - 'hub/**'
       - 'quiz/**'
-      - 'scripts/generate_hub_data.py'
-      - 'scripts/custom_questions.py'
-      - 'scripts/validate_hub.py'
-      - 'scripts/learning_hub.test.js'
-      - 'scripts/validate_notebooks.py'
+      - 'scripts/**'
+      - 'Makefile'
       - 'pyproject.toml'
       - 'uv.lock'
+      - '*.md'
   pull_request:
     paths:
-      - 'curriculum/**/*.ipynb'
-      - 'curriculum/**/*.py'
+      - '.github/**'
+      - 'curriculum/**'
       - 'hub/**'
       - 'quiz/**'
-      - 'scripts/generate_hub_data.py'
-      - 'scripts/custom_questions.py'
-      - 'scripts/validate_hub.py'
-      - 'scripts/learning_hub.test.js'
-      - 'scripts/validate_notebooks.py'
+      - 'scripts/**'
+      - 'Makefile'
       - 'pyproject.toml'
       - 'uv.lock'
+      - '*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
-      - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: astral-sh/setup-uv@v10
+        with:
+          version: '0.13.6'
+          enable-cache: true
+      - name: Set up minimum supported Python
+        uses: actions/setup-python@v7
         with:
           python-version: '3.10'
-      - name: Install dependencies
-        run: uv sync
-      - name: Validate Notebooks
-        run: uv run python scripts/validate_notebooks.py
-      - name: Validate Learning Hub Data
-        run: uv run python scripts/validate_hub.py
-      - name: Test Learning Hub Interactions
-        run: node --test scripts/learning_hub.test.js
-      - name: Test Reusable Course Labs
-        shell: bash
-        run: |
-          for lab in curriculum/*/*/lab.py; do
-            tests="$(dirname "$lab")/tests"
-            if [[ -d "$tests" ]]; then
-              uv run pytest "$tests" -q
-            fi
-          done
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Synchronize locked environment
+        run: make sync
+      - name: Validate repository and learner surfaces
+        run: make validate
+      - name: Test all course implementations
+        run: make test
+      - name: Execute all notebooks
+        run: make notebooks
+      - name: Audit locked dependencies
+        run: make audit
